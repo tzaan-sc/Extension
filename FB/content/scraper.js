@@ -45,22 +45,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const items = [];
       const seenUrls = new Set();
 
-      // Quét tất cả thẻ a dẫn đến bài viết / ảnh trên tab hiện tại
-      const anchors = document.querySelectorAll('a[href*="/posts/"], a[href*="/share/p/"], a[href*="permalink.php"], a[href*="/photos/"], a[href*="/photo.php"]');
+      // 1. Quét tất cả liên kết bài viết / ảnh / video
+      const anchors = document.querySelectorAll('a[href*="/posts/"], a[href*="/share/p/"], a[href*="permalink.php"], a[href*="pfbid0"], a[href*="/photos/"], a[href*="/photo.php"]');
       
       anchors.forEach(a => {
         let href = a.href;
         if (!href) return;
         
         // Bỏ query tracking thừa
-        href = href.split('?')[0].split('&')[0];
+        if (href.includes('pfbid0')) {
+          const match = href.match(/https:\/\/[^\/]+\/[^\/]+\/posts\/pfbid0[a-zA-Z0-9]+/) || href.match(/https:\/\/[^\/]+\/posts\/pfbid0[a-zA-Z0-9]+/);
+          if (match) href = match[0];
+        } else if (href.includes('/share/p/')) {
+          const match = href.match(/https:\/\/[^\/]+\/share\/p\/[a-zA-Z0-9]+/);
+          if (match) href = match[0];
+        } else {
+          href = href.split('?')[0].split('&')[0];
+        }
         
-        if ((href.includes('/posts/') || href.includes('/share/p/') || href.includes('permalink.php')) && !seenUrls.has(href)) {
+        if ((href.includes('/posts/') || href.includes('/share/p/') || href.includes('permalink.php') || href.includes('pfbid0')) && !seenUrls.has(href)) {
           seenUrls.add(href);
 
-          // Thử trích xuất văn bản gần nhất của bài viết từ cha (Story Container)
-          let storyContainer = a.closest('div[data-ad-preview="message"], div[dir="auto"], div[role="article"]');
-          let textSnippet = storyContainer ? storyContainer.innerText.slice(0, 300) : '';
+          // Trích xuất đoạn văn bản thật của bài viết
+          let storyContainer = a.closest('div[role="article"], div[data-ad-preview="message"], div[dir="auto"]');
+          let textSnippet = storyContainer ? storyContainer.innerText.slice(0, 300).trim() : '';
 
           items.push({
             url: href,

@@ -122,6 +122,45 @@ export async function deleteProfile(uid) {
 }
 
 /**
+ * Xóa toàn bộ activities cũ của 1 UID trước khi quét phiên mới
+ */
+export async function clearActivitiesOfUid(uid) {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('activities', 'readwrite');
+    const actStore = tx.objectStore('activities');
+    const index = actStore.index('target_user_id');
+    const req = index.openCursor(IDBKeyRange.only(uid));
+
+    req.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      }
+    };
+
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Xóa sạch toàn bộ cơ sở dữ liệu (Wipe All DB)
+ */
+export async function clearAllDatabase() {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['profiles', 'posts', 'activities'], 'readwrite');
+    tx.objectStore('profiles').clear();
+    tx.objectStore('posts').clear();
+    tx.objectStore('activities').clear();
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
  * Lưu đồng thời danh sách POSTS và ACTIVITIES theo quan hệ chuẩn hóa
  */
 export async function saveActivitiesAndPosts(activities = [], posts = []) {

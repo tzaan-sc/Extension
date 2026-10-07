@@ -1,9 +1,5 @@
-/**
- * sidepanel/sidepanel.js - Controller chính điều khiển giao diện Side Panel và luồng quét dữ liệu
- */
-
 import { FacebookScannerEngine } from '../utils/fb_api.js';
-import { saveProfile, saveActivities, getActivitiesTree, getAllProfiles, getProfile, deleteProfile } from '../utils/storage.js';
+import { saveProfile, saveActivities, getActivitiesTree, getAllProfiles, getProfile, deleteProfile, clearActivitiesOfUid, clearAllDatabase } from '../utils/storage.js';
 import { exportToJSON, exportToCSV, exportToHTMLReport, formatTimestamp } from '../utils/parser.js';
 
 // DOM Elements
@@ -100,7 +96,7 @@ function setupEventListeners() {
   btnStopScan.addEventListener('click', () => {
     if (scanner) scanner.stop();
     setScanningState(false);
-    statusTitle.textContent = 'Đã dừng quá trình quét.';
+    statusTitle.textContent = 'Đang dừng quá trình quét.';
   });
 
   // Bộ lọc từ khóa
@@ -162,6 +158,10 @@ async function handleStartScan() {
     currentProfile = await scanner.resolveProfile(urlVal);
     renderTargetInfo(currentProfile);
     await saveProfile(currentProfile);
+
+    // Xóa sạch dữ liệu cache cũ của UID này để tránh hiển thị dữ liệu thử nghiệm trước đó
+    await clearActivitiesOfUid(currentProfile.uid);
+    await refreshTreeData();
 
     // 1.1 Thử trích xuất các link pfbid0... / posts trực tiếp từ tab Facebook đang mở (nếu có)
     try {
@@ -465,8 +465,33 @@ async function openHistoryModal() {
   historyList.innerHTML = '';
 
   if (profiles.length === 0) {
-    historyList.innerHTML = '<p style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px 0;">Chưa có hồ sơ nào được lưu.</p>';
+    historyList.innerHTML = '<p style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px 0;">Chưa có hồ sơ nào được lưu trong bộ nhớ.</p>';
   } else {
+    const clearAllWrap = document.createElement('div');
+    clearAllWrap.style.cssText = 'padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;';
+    clearAllWrap.innerHTML = `
+      <span style="font-size:11px;color:var(--text-muted);">Tổng số: ${profiles.length} hồ sơ</span>
+      <button id="btnWipeAllDB" class="mini-btn" style="color:var(--danger);border-color:rgba(239,68,68,0.3);" title="Xóa toàn bộ dữ liệu đã lưu">🗑️ Xóa toàn bộ Cache</button>
+    `;
+    historyList.appendChild(clearAllWrap);
+
+    clearAllWrap.querySelector('#btnWipeAllDB').addEventListener('click', async () => {
+      if (confirm('CẢNH BÁO: Bạn có chắc chắn muốn xóa TOÀN BỘ hồ sơ và bài viết đã lưu trong bộ nhớ máy không?')) {
+        await clearAllDatabase();
+        currentProfile = null;
+        currentTreeData = null;
+        currentRawList = [];
+        targetInfoBox.classList.add('hidden');
+        statsSection.classList.add('hidden');
+        filterSection.classList.add('hidden');
+        const categoryTabs = document.getElementById('categoryTabs');
+        if (categoryTabs) categoryTabs.classList.add('hidden');
+        treeContent.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+        openHistoryModal();
+      }
+    });
+
     for (const p of profiles) {
       const item = document.createElement('div');
       item.className = 'history-item';
