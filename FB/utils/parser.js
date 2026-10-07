@@ -1,6 +1,39 @@
 /**
- * utils/parser.js - Xử lý chuẩn hóa URL, bóc tách UID, chuyển đổi thời gian và định dạng xuất báo cáo
+ * Chuyển đổi ID dạng "USERID_POSTID" hoặc "PAGEID_POSTID" thành Link Facebook trực tiếp
  */
+export function buildFacebookPostUrl(idString) {
+  if (!idString) return 'https://www.facebook.com';
+  const parts = idString.split('_');
+  if (parts.length >= 2) {
+    const parentId = parts[0];
+    const postId = parts[1];
+    return `https://www.facebook.com/permalink.php?story_fbid=${postId}&id=${parentId}`;
+  }
+  return `https://www.facebook.com/${idString}`;
+}
+
+/**
+ * Chuẩn hóa các object trả về từ Graph API / GraphQL (id, message, created_time, from, cursor)
+ */
+export function parseGraphApiItem(item, defaultType = 'comments', targetUid = '') {
+  const time = item.created_time ? new Date(item.created_time).getTime() : Date.now();
+  const year = new Date(time).getFullYear();
+  const postUrl = buildFacebookPostUrl(item.id);
+  const authorName = (item.from && item.from.name) ? item.from.name : 'Bài viết trên Facebook';
+
+  return {
+    id: item.id || `${targetUid}_${defaultType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    targetUid: targetUid,
+    type: defaultType,
+    year: year,
+    timestamp: time,
+    postUrl: postUrl,
+    authorName: authorName,
+    content: (item.from && item.from.name) ? `Đăng bởi: ${item.from.name}` : 'Nội dung bài viết trên Facebook',
+    commentText: item.message || '',
+    cursor: item.cursor || ''
+  };
+}
 
 /**
  * Trích xuất username hoặc ID từ URL Facebook

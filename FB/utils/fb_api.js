@@ -1,8 +1,4 @@
-/**
- * utils/fb_api.js - Lõi giao tiếp, trích xuất JSON sâu và tạo truy vấn dữ liệu Facebook
- */
-
-import { parseFacebookUrl } from './parser.js';
+import { parseFacebookUrl, parseGraphApiItem, buildFacebookPostUrl } from './parser.js';
 
 export class FacebookScannerEngine {
   constructor() {
@@ -435,12 +431,12 @@ export class FacebookScannerEngine {
   }
 
   /**
-   * Bước 4: Quét Bình luận (Comments)
+   * Bước 5: Quét Bình luận (Comments) - Bóc tách trực tiếp từ Graph API / GraphQL Feed
    */
   async scanComments(uid, onProgress) {
     const activities = [];
     await this.checkFlowState();
-    if (onProgress) onProgress('Đang phân tích các cuộc trò chuyện và bình luận công khai...', 75);
+    if (onProgress) onProgress('Đang phân tích các cuộc trò chuyện và bình luận công khai...', 85);
 
     try {
       // 1. Quét từ endpoint posts-commented
@@ -451,16 +447,34 @@ export class FacebookScannerEngine {
         const html = await resp.text();
         const jsonBlobs = this.extractJsonBlobs(html);
 
-        // Tìm các bình luận hoặc bài viết có tương tác
+        // A. Tìm các mảng Graph API chuẩn: [{ id, message, created_time, from, cursor }, ...]
+        for (const blob of jsonBlobs) {
+          if (Array.isArray(blob)) {
+            for (const item of blob) {
+              if (item.id && (item.message !== undefined || item.created_time)) {
+                activities.push(parseGraphApiItem(item, 'comments', uid));
+              }
+            }
+          } else if (blob && Array.isArray(blob.data)) {
+            for (const item of blob.data) {
+              if (item.id && (item.message !== undefined || item.created_time)) {
+                activities.push(parseGraphApiItem(item, 'comments', uid));
+              }
+            }
+          }
+        }
+
+        // B. Tìm các comment nodes trong Relay tree nếu có
         const commentNodes = this.findNodesRecursively(jsonBlobs, node => {
-          return node && (node.__typename === 'Comment' || (node.body && node.body.text));
+          return node && (node.__typename === 'Comment' || (node.body && node.body.text && node.created_time));
         });
 
-        for (const c of commentNodes.slice(0, 10)) {
-          const cText = c.body && c.body.text ? c.body.text : 'Bình luận công khai';
-          const cTime = c.created_time ? c.created_time * 1000 : Date.now();
-          const author = (c.author && c.author.name) || 'Tài khoản mục tiêu';
-          const postUrl = c.url || c.permalink_url || `https://www.facebook.com/${uid}`;
+        for (const c of commentNodes.slice(0, 20)) {
+          const cText = c.body && c.body.text ? c.body.text : (c.message || '');
+          if (!cText) continue;
+          const cTime = c.created_time ? (typeof c.created_time === 'number' ? c.created_time * 1000 : new Date(c.created_time).getTime()) : Date.now();
+          const author = (c.author && c.author.name) || (c.from && c.from.name) || 'Bài viết trên Facebook';
+          const postUrl = c.id ? buildFacebookPostUrl(c.id) : (c.url || c.permalink_url || `https://www.facebook.com/${uid}`);
 
           activities.push({
             id: `${uid}_comments_${c.id || Math.random().toString(36).slice(2, 8)}`,
@@ -468,9 +482,9 @@ export class FacebookScannerEngine {
             type: 'comments',
             year: new Date(cTime).getFullYear(),
             timestamp: cTime,
-            postUrl,
-            authorName: `Bài viết trên Facebook`,
-            content: `Bài viết công khai nơi tài khoản đã để lại bình luận.`,
+            postUrl: postUrl,
+            authorName: author,
+            content: `Bình luận trong bài viết của: ${author}`,
             commentText: cText
           });
         }
@@ -491,17 +505,6 @@ export class FacebookScannerEngine {
         authorName: 'Lối tắt Facebook Graph',
         content: '💬 Xem tất cả bài viết công khai mà người này từng bình luận.',
         commentText: 'Nhấp để xem toàn bộ danh sách bài viết người này đã để lại bình luận trên Facebook.'
-      },
-      {
-        id: `${uid}_likes_filter_direct`,
-        targetUid: uid,
-        type: 'others',
-        year: new Date().getFullYear(),
-        timestamp: Date.now(),
-        postUrl: `https://www.facebook.com/search/${uid}/stories-liked`,
-        authorName: 'Lối tắt Tương tác Like',
-        content: '👍 Xem các bài viết công khai mà người này đã bấm Like/Thả tim.',
-        commentText: ''
       }
     );
 

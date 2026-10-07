@@ -64,28 +64,29 @@ FB/
 ---
 
 ### 🔹 Giai đoạn 3: Xây dựng Giao diện Side Panel & Hiển thị Dữ liệu
-- [ ] **3.1. Thiết kế Form Quét & Thanh Trạng Thái (`sidepanel.html` + `sidepanel.css`)**
+- [x] **3.1. Thiết kế Form Quét & Thanh Trạng Thái (`sidepanel.html` + `sidepanel.css`)**
   - Ô nhập Facebook Profile URL + Nút "Bắt đầu quét".
   - Hiển thị thông tin Target (Avatar, Tên, UID) sau khi nhận diện.
   - Thanh tiến trình (Progress Bar), bộ đếm số lượng hoạt động tìm thấy theo thời gian thực.
-- [ ] **3.2. Xây dựng Cây Thư Mục Hoạt Động (Interactive Activity Tree View)**
-  - Phân nhóm 1: **Loại hoạt động** (💬 Bình luận, 🏷️ Bài viết gắn thẻ, @ Nhắc tên, 📸 Ảnh, 🎥 Video).
-  - Phân nhóm 2: **Năm** (2026, 2025, 2024...).
-  - Thẻ hiển thị chi tiết (Card Item): Có preview nội dung, thời gian rõ ràng, nút click nhảy thẳng tới link gốc trên Facebook.
-- [ ] **3.3. Tính năng Tìm kiếm & Lọc nội bộ (In-app Search & Filter)**
+  - Thanh lối tắt nhanh Graph Search (Bình luận, Bài viết tag, Ảnh/Video, Đã like).
+- [x] **3.2. Xây dựng Cây Thư Mục Hoạt Động (Interactive Activity Tree View)**
+  - Phân tách mục rõ ràng: 📝 **Bài viết đã đăng**, 💬 **Bình luận**, 🏷️ **Bài viết gắn thẻ**, 📸 **Ảnh/Video**.
+  - Phân nhóm theo **Năm** (2026, 2025, 2024...).
+  - Thẻ hiển thị chi tiết (Card Item): Khối hiển thị comment nổi bật, tác giả/group, ngày giờ, đường link bài viết đầy đủ `https://www.facebook.com/...`.
+- [x] **3.3. Tính năng Tìm kiếm & Lọc nội bộ (In-app Search & Filter)**
+  - Thanh Tab Danh Mục: [Tất cả] [📝 Bài viết] [💬 Bình luận] [🏷️ Gắn thẻ] [📸 Ảnh/Video].
   - Tìm kiếm nhanh từ khóa trong các bình luận/bài viết đã quét.
-  - Lọc theo khoảng năm hoặc theo loại hành động.
 
 ---
 
 ### 🔹 Giai đoạn 4: Tính năng Nâng cao & Xuất Dữ liệu (Export)
-- [ ] **4.1. Xuất Dữ liệu Đa Định dạng**
+- [x] **4.1. Xuất Dữ liệu Đa Định dạng**
   - Xuất file **JSON** (lưu trữ/sao lưu).
   - Xuất file **Excel/CSV** (phân tích bảng tính).
   - Xuất file **Báo cáo HTML tương tác offline** (xem lại cây hoạt động mà không cần mở extension).
-- [ ] **4.2. Quản lý Lịch sử Quét (Multi-Profile Management)**
+- [x] **4.2. Quản lý Lịch sử Quét (Multi-Profile Management)**
   - Lưu danh sách các Profile đã từng quét để mở xem lại bất kỳ lúc nào mà không cần quét lại từ đầu.
-  - Nút "Quét cập nhật" (quét thêm dữ liệu mới phát sinh).
+  - Quản lý xóa hồ sơ đã lưu.
 
 ---
 

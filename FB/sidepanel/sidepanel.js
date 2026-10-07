@@ -54,6 +54,7 @@ let scanner = null;
 let currentProfile = null;
 let currentTreeData = null;
 let currentRawList = [];
+let selectedCategory = 'all';
 
 // Khởi chạy
 document.addEventListener('DOMContentLoaded', async () => {
@@ -130,6 +131,17 @@ function setupEventListeners() {
   // Modal Lịch sử
   btnHistory.addEventListener('click', openHistoryModal);
   btnCloseHistory.addEventListener('click', () => historyModal.classList.add('hidden'));
+
+  // Xử lý chuyển đổi Tab danh mục
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedCategory = btn.dataset.category || 'all';
+      filterAndRenderTree(inputKeyword.value.toLowerCase().trim());
+    });
+  });
 }
 
 async function handleStartScan() {
@@ -247,6 +259,8 @@ function renderTargetInfo(profile) {
   targetInfoBox.classList.remove('hidden');
   statsSection.classList.remove('hidden');
   filterSection.classList.remove('hidden');
+  const categoryTabs = document.getElementById('categoryTabs');
+  if (categoryTabs) categoryTabs.classList.remove('hidden');
   emptyState.classList.add('hidden');
   treeContent.classList.remove('hidden');
 }
@@ -263,7 +277,7 @@ async function refreshTreeData() {
   if (statTaggedPosts) statTaggedPosts.textContent = result.counts.tagged_posts || 0;
   if (statPhotos) statPhotos.textContent = (result.counts.tagged_photos || 0) + (result.counts.tagged_videos || 0);
 
-  renderTree(result.tree);
+  filterAndRenderTree(inputKeyword.value.toLowerCase().trim());
 }
 
 const TYPE_CONFIG = {
@@ -370,23 +384,28 @@ function createActivityCard(item) {
 
 function filterAndRenderTree(keyword) {
   if (!currentTreeData) return;
-  if (!keyword) {
-    renderTree(currentTreeData.tree);
-    return;
-  }
 
   const filteredTree = {};
   for (const [type, years] of Object.entries(currentTreeData.tree)) {
+    // Nếu có chọn tab danh mục cụ thể (không phải 'all')
+    if (selectedCategory !== 'all' && type !== selectedCategory) {
+      continue;
+    }
+
     filteredTree[type] = {};
     for (const [year, items] of Object.entries(years)) {
-      const matched = items.filter(it => 
-        (it.content && it.content.toLowerCase().includes(keyword)) ||
-        (it.commentText && it.commentText.toLowerCase().includes(keyword)) ||
-        (it.authorName && it.authorName.toLowerCase().includes(keyword)) ||
-        (it.postUrl && it.postUrl.toLowerCase().includes(keyword))
-      );
-      if (matched.length > 0) {
-        filteredTree[type][year] = matched;
+      if (!keyword) {
+        filteredTree[type][year] = items;
+      } else {
+        const matched = items.filter(it => 
+          (it.content && it.content.toLowerCase().includes(keyword)) ||
+          (it.commentText && it.commentText.toLowerCase().includes(keyword)) ||
+          (it.authorName && it.authorName.toLowerCase().includes(keyword)) ||
+          (it.postUrl && it.postUrl.toLowerCase().includes(keyword))
+        );
+        if (matched.length > 0) {
+          filteredTree[type][year] = matched;
+        }
       }
     }
   }
