@@ -1,5 +1,5 @@
 /**
- * utils/fb_api.js - Lõi giao tiếp và trích xuất dữ liệu từ Facebook Web / GraphQL
+ * utils/fb_api.js - Lõi giao tiếp, trích xuất JSON sâu và tạo truy vấn dữ liệu Facebook
  */
 
 import { parseFacebookUrl } from './parser.js';
@@ -14,7 +14,7 @@ export class FacebookScannerEngine {
   resume() { this.isPaused = false; }
   stop() { this.isStopped = true; }
 
-  async delay(minMs = 1500, maxMs = 3000) {
+  async delay(minMs = 1200, maxMs = 2500) {
     const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
     await new Promise(r => setTimeout(r, ms));
   }
@@ -29,12 +29,54 @@ export class FacebookScannerEngine {
   }
 
   /**
-   * Bước 1: Phân giải URL hoặc Username thành Facebook Profile Info (UID, Tên, Avatar)
+   * Bóc tách toàn bộ JSON nhúng trong HTML của Facebook (Relay cache, ScheduledServerJS, comet data)
+   */
+  extractJsonBlobs(html) {
+    const blobs = [];
+    // Tìm các thẻ script chứa JSON
+    const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+    let match;
+    while ((match = scriptRegex.exec(html)) !== null) {
+      const content = match[1].trim();
+      if (content.startsWith('{') && content.endsWith('}')) {
+        try {
+          blobs.push(JSON.parse(content));
+        } catch (e) {}
+      } else if (content.includes('require(') || content.includes('{"require":')) {
+        const jsonMatch = content.match(/\{"require":[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            blobs.push(JSON.parse(jsonMatch[0]));
+          } catch (e) {}
+        }
+      }
+    }
+    return blobs;
+  }
+
+  /**
+   * Tìm đệ quy các bài post, ảnh hoặc comment trong cây JSON phức tạp của Facebook
+   */
+  findNodesRecursively(obj, condition, results = []) {
+    if (!obj || typeof obj !== 'object') return results;
+    if (condition(obj)) {
+      results.push(obj);
+    }
+    for (const key of Object.keys(obj)) {
+      if (typeof obj[key] === 'object') {
+        this.findNodesRecursively(obj[key], condition, results);
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Bước 1: Phân giải URL hoặc Username thành Profile Info (UID, Tên, Avatar)
    */
   async resolveProfile(input) {
     const parsed = parseFacebookUrl(input);
     if (!parsed) {
-      throw new Error('Định dạng liên kết hoặc UID không hợp lệ.');
+      throw new Error('Định dạng liên kết hoặc UID không hợp lệ. Vui lòng kiểm tra lại URL.');
     }
 
     let targetUrl = '';
@@ -53,7 +95,7 @@ export class FacebookScannerEngine {
       });
 
       if (!resp.ok) {
-        throw new Error(`Không thể truy cập trang cá nhân (HTTP ${resp.status}). Hãy đảm bảo bạn đã đăng nhập Facebook.`);
+        throw new Error(`Không thể kết nối tới Facebook (HTTP ${resp.status}). Vui lòng đảm bảo bạn đang đăng nhập Facebook trên trình duyệt.`);
       }
 
       const html = await resp.text();
@@ -69,7 +111,8 @@ export class FacebookScannerEngine {
           /fb:\/\/profile\/(\d+)/,
           /"author_id":(\d+)/,
           /"target_id":"(\d+)"/,
-          /fb:\/\/profile\/(\d+)/
+          /props\.id="(\d+)"/,
+          /"actorID":"(\d+)"/
         ];
 
         for (const pattern of uidPatterns) {
@@ -82,16 +125,17 @@ export class FacebookScannerEngine {
       }
 
       if (!uid) {
-        throw new Error('Không thể tự động bóc tách UID từ Facebook. Vui lòng nhập trực tiếp UID số.');
+        throw new Error('Không thể tự động bóc tách UID từ trang cá nhân này. Bạn có thể nhập trực tiếp dãy số UID (VD: 1000...).');
       }
 
-      // Bóc tách Tên và Avatar
+      // Bóc tách Tên
       let name = 'Người dùng Facebook';
       const titleMatch = html.match(/<title id="pageTitle">([^<]+)<\/title>/) || html.match(/<title>([^<]+)<\/title>/);
       if (titleMatch && titleMatch[1]) {
         name = titleMatch[1].replace(' | Facebook', '').trim();
       }
 
+      // Bóc tách Avatar
       let avatarUrl = 'https://via.placeholder.com/64';
       const metaOgImage = html.match(/<meta property="og:image" content="([^"]+)"/);
       if (metaOgImage && metaOgImage[1]) {
@@ -112,44 +156,90 @@ export class FacebookScannerEngine {
   }
 
   /**
-   * Bước 2: Quét Ảnh & Video được gắn thẻ
+   * Bước 2: Quét Ảnh & Video được gắn thẻ (Tagged Media)
    */
   async scanTaggedMedia(uid, onProgress) {
     const activities = [];
-    const mediaUrls = [
-      { type: 'tagged_photos', url: `https://www.facebook.com/${uid}/photos_of` },
-      { type: 'tagged_videos', url: `https://www.facebook.com/${uid}/videos_of` }
+    const mediaSources = [
+      { type: 'tagged_photos', label: 'ảnh', url: `https://www.facebook.com/${uid}/photos_of`, directSearch: `https://www.facebook.com/${uid}/photos_of` },
+      { type: 'tagged_videos', label: 'video', url: `https://www.facebook.com/${uid}/videos_of`, directSearch: `https://www.facebook.com/${uid}/videos_of` }
     ];
 
-    for (const item of mediaUrls) {
+    for (const src of mediaSources) {
       await this.checkFlowState();
-      if (onProgress) onProgress(`Đang quét ${item.type === 'tagged_photos' ? 'ảnh' : 'video'} được gắn thẻ...`, 20);
+      if (onProgress) onProgress(`Đang quét ${src.label} được gắn thẻ của UID ${uid}...`, 25);
 
       try {
-        const resp = await fetch(item.url, { credentials: 'include' });
+        const resp = await fetch(src.url, { credentials: 'include' });
         if (resp.ok) {
           const html = await resp.text();
-          // Trích xuất các bài post / media items có mặt trong trang
-          const photoLinks = [...html.matchAll(/\/photo(\.php|\/)[^"'\s]+/g)];
-          for (const match of photoLinks) {
-            const mediaHref = 'https://www.facebook.com' + match[0].replace(/&amp;/g, '&');
-            const now = new Date();
-            activities.push({
-              id: `${uid}_${item.type}_${Math.random().toString(36).slice(2, 9)}`,
-              targetUid: uid,
-              type: item.type,
-              year: now.getFullYear(),
-              timestamp: Date.now(),
-              postUrl: mediaHref,
-              authorName: 'Được gắn thẻ trong bài đăng',
-              content: 'Hình ảnh / Video công khai được gắn thẻ tài khoản này.',
-              commentText: ''
-            });
+          const jsonBlobs = this.extractJsonBlobs(html);
+
+          // Tìm các node ảnh / video trong Relay tree
+          const mediaNodes = this.findNodesRecursively(jsonBlobs, node => {
+            return (node && (node.__typename === 'Photo' || node.__typename === 'Video' || node.image || node.photo_id));
+          });
+
+          if (mediaNodes.length > 0) {
+            for (const node of mediaNodes.slice(0, 20)) {
+              const photoId = node.id || node.photo_id || Math.random().toString(36).slice(2, 8);
+              const postUrl = node.url || node.permalink_url || `https://www.facebook.com/photo.php?fbid=${photoId}&set=a.${uid}`;
+              const time = node.creation_time ? node.creation_time * 1000 : (node.publish_time ? node.publish_time * 1000 : Date.now());
+              const yr = new Date(time).getFullYear();
+
+              activities.push({
+                id: `${uid}_${src.type}_${photoId}`,
+                targetUid: uid,
+                type: src.type,
+                year: yr,
+                timestamp: time,
+                postUrl,
+                authorName: (node.owner && node.owner.name) || (node.actors && node.actors[0] && node.actors[0].name) || 'Bài đăng gắn thẻ công khai',
+                content: node.accessibility_caption || (node.message && node.message.text) || `Hình ảnh/Video công khai có gắn thẻ tài khoản ${uid}`,
+                commentText: ''
+              });
+            }
+          } else {
+            // Regex fallback tìm kiếm các liên kết ảnh trực tiếp trong HTML
+            const photoMatches = [...html.matchAll(/\/photo(\.php\?fbid=|\/)([\d]+)[^"'\s]*/g)];
+            const seenIds = new Set();
+
+            for (const match of photoMatches) {
+              const fbid = match[2];
+              if (!fbid || seenIds.has(fbid)) continue;
+              seenIds.add(fbid);
+
+              const photoUrl = `https://www.facebook.com/photo.php?fbid=${fbid}`;
+              activities.push({
+                id: `${uid}_${src.type}_${fbid}`,
+                targetUid: uid,
+                type: src.type,
+                year: new Date().getFullYear(),
+                timestamp: Date.now(),
+                postUrl: photoUrl,
+                authorName: 'Được gắn thẻ trong bài đăng ảnh',
+                content: `Ảnh công khai có sự xuất hiện hoặc được tag bởi bạn bè (Photo ID: ${fbid}).`,
+                commentText: ''
+              });
+            }
           }
         }
       } catch (e) {
-        console.warn(`[FB API] Không thể lấy ${item.type}:`, e);
+        console.warn(`[FB API] Lỗi quét ${src.type}:`, e);
       }
+
+      // Thêm lối tắt truy vấn trực tiếp vào bộ sưu tập
+      activities.push({
+        id: `${uid}_${src.type}_shortcut`,
+        targetUid: uid,
+        type: src.type,
+        year: new Date().getFullYear(),
+        timestamp: Date.now(),
+        postUrl: src.directSearch,
+        authorName: 'Bộ sưu tập Facebook',
+        content: `🔍 Mở toàn bộ danh sách ${src.label} được gắn thẻ của tài khoản này trên Facebook.`,
+        commentText: ''
+      });
 
       await this.delay(1000, 2000);
     }
@@ -158,41 +248,82 @@ export class FacebookScannerEngine {
   }
 
   /**
-   * Bước 3: Quét Bài viết được gắn thẻ & Nhắc tên (Mentions)
+   * Bước 3: Quét Bài viết được gắn thẻ & Nhắc tên (Tagged Posts & Mentions)
    */
   async scanTaggedPostsAndMentions(uid, onProgress) {
     const activities = [];
     await this.checkFlowState();
-    if (onProgress) onProgress('Đang tìm kiếm bài viết công khai có gắn thẻ hoặc nhắc tên...', 50);
+    if (onProgress) onProgress('Đang tìm bài viết công khai có gắn thẻ hoặc nhắc tên...', 50);
+
+    const searchUrl = `https://www.facebook.com/search/posts/?q=${uid}`;
 
     try {
-      // Gọi URL tìm kiếm bài viết có liên quan đến UID
-      const searchUrl = `https://www.facebook.com/search/posts/?q=${uid}`;
       const resp = await fetch(searchUrl, { credentials: 'include' });
       if (resp.ok) {
         const html = await resp.text();
-        // Regex tìm các khối bài viết hoặc story permalink
-        const storyMatches = [...html.matchAll(/href="(https:\/\/[www\.]*facebook\.com\/[^\/]+\/posts\/[^"]+)"/g)];
-        
-        for (const m of storyMatches.slice(0, 15)) {
+        const jsonBlobs = this.extractJsonBlobs(html);
+
+        // Tìm các story nodes trong feed kết quả tìm kiếm
+        const storyNodes = this.findNodesRecursively(jsonBlobs, node => {
+          return node && (node.__typename === 'Story' || node.__typename === 'CometStory' || (node.message && node.message.text));
+        });
+
+        for (const story of storyNodes.slice(0, 15)) {
+          const storyId = story.id || story.post_id || Math.random().toString(36).slice(2, 8);
+          const author = (story.actors && story.actors[0] && story.actors[0].name) || 'Người đăng công khai';
+          const postText = (story.message && story.message.text) || 'Bài viết công khai có liên kết tới tài khoản.';
+          const postUrl = story.url || story.permalink_url || `https://www.facebook.com/${uid}`;
+          const time = story.creation_time ? story.creation_time * 1000 : Date.now();
+
           activities.push({
-            id: `${uid}_tagged_posts_${Math.random().toString(36).slice(2, 9)}`,
+            id: `${uid}_tagged_posts_${storyId}`,
             targetUid: uid,
             type: 'tagged_posts',
-            year: new Date().getFullYear(),
-            timestamp: Date.now() - Math.floor(Math.random() * 10000000),
-            postUrl: m[1],
-            authorName: 'Bài viết công khai',
-            content: 'Bài viết công khai có liên kết hoặc nhắc đến người này.',
+            year: new Date(time).getFullYear(),
+            timestamp: time,
+            postUrl,
+            authorName: author,
+            content: postText,
             commentText: ''
           });
+        }
+
+        // Regex fallback nếu JSON bị mã hóa sâu
+        if (activities.length === 0) {
+          const postLinks = [...html.matchAll(/href="(https:\/\/[www\.]*facebook\.com\/[^/]+\/posts\/[^"]+)"/g)];
+          for (const pl of postLinks.slice(0, 10)) {
+            activities.push({
+              id: `${uid}_tagged_posts_${Math.random().toString(36).slice(2, 9)}`,
+              targetUid: uid,
+              type: 'tagged_posts',
+              year: new Date().getFullYear(),
+              timestamp: Date.now(),
+              postUrl: pl[1].replace(/&amp;/g, '&'),
+              authorName: 'Bài viết công khai có tag',
+              content: 'Bài viết công khai nhắc tới hoặc có liên quan đến tài khoản này.',
+              commentText: ''
+            });
+          }
         }
       }
     } catch (e) {
       console.warn('[FB API] Lỗi quét bài viết tag:', e);
     }
 
-    await this.delay(1200, 2500);
+    // Luôn bổ sung Deep Search Link dẫn tới trang tìm kiếm chính xác bài viết tag trên FB
+    activities.push({
+      id: `${uid}_tagged_posts_direct_search`,
+      targetUid: uid,
+      type: 'tagged_posts',
+      year: new Date().getFullYear(),
+      timestamp: Date.now(),
+      postUrl: `https://www.facebook.com/search/posts/?q=${uid}`,
+      authorName: 'Bộ lọc tìm kiếm Facebook',
+      content: '🔍 Xem tất cả các bài viết công khai trên toàn Facebook có gắn thẻ hoặc nhắc đến UID này.',
+      commentText: ''
+    });
+
+    await this.delay(1200, 2200);
     return activities;
   }
 
@@ -202,33 +333,70 @@ export class FacebookScannerEngine {
   async scanComments(uid, onProgress) {
     const activities = [];
     await this.checkFlowState();
-    if (onProgress) onProgress('Đang thu thập lịch sử bình luận công khai...', 75);
+    if (onProgress) onProgress('Đang phân tích các cuộc trò chuyện và bình luận công khai...', 75);
 
-    // Tận dụng endpoint search và filter comment
     try {
-      const commentSearchUrl = `https://www.facebook.com/search/posts/?q=${uid}`;
+      // 1. Quét từ endpoint posts-commented
+      const commentSearchUrl = `https://www.facebook.com/search/${uid}/posts-commented`;
       const resp = await fetch(commentSearchUrl, { credentials: 'include' });
+
       if (resp.ok) {
-        // Thu thập các mẫu bình luận mẫu tìm thấy
-        // Trong môi trường extension thực tế, Content Script sẽ bổ trợ cuộn bắt GraphQL Relay doc_id
-        for (let i = 0; i < 5; i++) {
-          const yr = 2026 - (i % 3);
+        const html = await resp.text();
+        const jsonBlobs = this.extractJsonBlobs(html);
+
+        // Tìm các bình luận hoặc bài viết có tương tác
+        const commentNodes = this.findNodesRecursively(jsonBlobs, node => {
+          return node && (node.__typename === 'Comment' || (node.body && node.body.text));
+        });
+
+        for (const c of commentNodes.slice(0, 10)) {
+          const cText = c.body && c.body.text ? c.body.text : 'Bình luận công khai';
+          const cTime = c.created_time ? c.created_time * 1000 : Date.now();
+          const author = (c.author && c.author.name) || 'Tài khoản mục tiêu';
+          const postUrl = c.url || c.permalink_url || `https://www.facebook.com/${uid}`;
+
           activities.push({
-            id: `${uid}_comments_${i}_${Date.now()}`,
+            id: `${uid}_comments_${c.id || Math.random().toString(36).slice(2, 8)}`,
             targetUid: uid,
             type: 'comments',
-            year: yr,
-            timestamp: Date.now() - (i * 86400000 * 45),
-            postUrl: `https://www.facebook.com/${uid}`,
-            authorName: `Bài viết công khai #${i + 1}`,
-            content: `Nội dung thảo luận bài viết công khai liên quan.`,
-            commentText: `Bình luận của tài khoản tại thời điểm năm ${yr}.`
+            year: new Date(cTime).getFullYear(),
+            timestamp: cTime,
+            postUrl,
+            authorName: `Bài viết trên Facebook`,
+            content: `Bài viết công khai nơi tài khoản đã để lại bình luận.`,
+            commentText: cText
           });
         }
       }
     } catch (e) {
       console.warn('[FB API] Lỗi quét comment:', e);
     }
+
+    // Thêm các lối tắt Deep Filter cho bình luận và tương tác
+    activities.push(
+      {
+        id: `${uid}_comments_filter_direct`,
+        targetUid: uid,
+        type: 'comments',
+        year: new Date().getFullYear(),
+        timestamp: Date.now(),
+        postUrl: `https://www.facebook.com/search/${uid}/posts-commented`,
+        authorName: 'Lối tắt Facebook Graph',
+        content: '💬 Xem tất cả bài viết công khai mà người này từng bình luận.',
+        commentText: 'Nhấp để xem toàn bộ danh sách bài viết người này đã để lại bình luận trên Facebook.'
+      },
+      {
+        id: `${uid}_likes_filter_direct`,
+        targetUid: uid,
+        type: 'others',
+        year: new Date().getFullYear(),
+        timestamp: Date.now(),
+        postUrl: `https://www.facebook.com/search/${uid}/stories-liked`,
+        authorName: 'Lối tắt Tương tác Like',
+        content: '👍 Xem các bài viết công khai mà người này đã bấm Like/Thả tim.',
+        commentText: ''
+      }
+    );
 
     await this.delay(1000, 2000);
     return activities;

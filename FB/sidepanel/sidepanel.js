@@ -214,6 +214,24 @@ function renderTargetInfo(profile) {
   targetUidText.textContent = profile.uid;
   targetProfileLink.href = profile.profileUrl || `https://www.facebook.com/${profile.uid}`;
 
+  // Gắn liên kết Graph Search nhanh
+  const uid = profile.uid;
+  const quickActionsBox = document.getElementById('quickActionsBox');
+  const quickBtnComments = document.getElementById('quickBtnComments');
+  const quickBtnTaggedPosts = document.getElementById('quickBtnTaggedPosts');
+  const quickBtnPhotos = document.getElementById('quickBtnPhotos');
+  const quickBtnVideos = document.getElementById('quickBtnVideos');
+  const quickBtnLikes = document.getElementById('quickBtnLikes');
+
+  if (quickActionsBox) {
+    quickBtnComments.href = `https://www.facebook.com/search/${uid}/posts-commented`;
+    quickBtnTaggedPosts.href = `https://www.facebook.com/search/posts/?q=${uid}`;
+    quickBtnPhotos.href = `https://www.facebook.com/${uid}/photos_of`;
+    quickBtnVideos.href = `https://www.facebook.com/${uid}/videos_of`;
+    quickBtnLikes.href = `https://www.facebook.com/search/${uid}/stories-liked`;
+    quickActionsBox.classList.remove('hidden');
+  }
+
   targetInfoBox.classList.remove('hidden');
   statsSection.classList.remove('hidden');
   filterSection.classList.remove('hidden');
