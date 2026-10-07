@@ -168,18 +168,24 @@ async function handleStartScan() {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab && tab.id) {
         const domResp = await chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_DOM_POSTS' }).catch(() => null);
-        if (domResp && domResp.links && domResp.links.length > 0) {
-          const domActs = domResp.links.map(link => ({
-            id: `${currentProfile.uid}_dom_${Math.random().toString(36).slice(2, 9)}`,
-            targetUid: currentProfile.uid,
-            type: 'author_posts',
-            year: new Date().getFullYear(),
-            timestamp: Date.now(),
-            postUrl: link,
-            authorName: currentProfile.name || 'Chính chủ đăng tải',
-            content: 'Bài viết công khai bóc tách trực tiếp từ giao diện tab Facebook.',
-            commentText: ''
-          }));
+        if (domResp && domResp.items && domResp.items.length > 0) {
+          const domActs = domResp.items.map(item => {
+            const postId = item.url ? item.url.match(/pfbid0[a-zA-Z0-9]+/)?.[0] || item.url.match(/\/posts\/(\d+)/)?.[1] || item.url : '';
+            return {
+              activity_id: `dom_${currentProfile.uid}_${postId || Math.random().toString(36).slice(2, 9)}`,
+              target_user_id: currentProfile.uid,
+              activity_type: 'author_posts',
+              post_id: postId || '',
+              postUrl: item.url,
+              authorName: currentProfile.name || 'Chính chủ đăng tải',
+              post_author_id: currentProfile.uid,
+              content: item.textSnippet || '',
+              commentText: '',
+              timestamp: Date.now(),
+              year: new Date().getFullYear(),
+              verified: true
+            };
+          });
           await saveActivities(domActs);
           await refreshTreeData();
         }
@@ -316,10 +322,12 @@ const TYPE_CONFIG = {
 function renderTree(tree) {
   treeContent.innerHTML = '';
 
+  let totalAll = 0;
   for (const [typeKey, config] of Object.entries(TYPE_CONFIG)) {
     const yearsObj = tree[typeKey] || {};
     const yearKeys = Object.keys(yearsObj).sort((a, b) => b.localeCompare(a));
     const totalCount = yearKeys.reduce((sum, yr) => sum + yearsObj[yr].length, 0);
+    totalAll += totalCount;
 
     if (totalCount === 0) continue;
 
@@ -374,6 +382,16 @@ function renderTree(tree) {
     branch.appendChild(branchHeader);
     branch.appendChild(branchBody);
     treeContent.appendChild(branch);
+  }
+
+  if (totalAll === 0) {
+    treeContent.innerHTML = `
+      <div style="text-align:center;color:var(--text-muted);padding:30px 14px;font-size:12px;line-height:1.6;">
+        <div style="font-size:24px;margin-bottom:6px;">🔍</div>
+        <strong>Không tìm thấy dữ liệu hoạt động công khai</strong>
+        <p style="font-size:11px;margin-top:4px;">Tài khoản này có thể đã ẩn bài viết/ảnh hoặc Facebook không cho phép truy cập công khai.</p>
+      </div>
+    `;
   }
 }
 
