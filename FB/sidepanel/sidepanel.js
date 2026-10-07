@@ -135,6 +135,22 @@ function setupEventListeners() {
   btnHistory.addEventListener('click', openHistoryModal);
   btnCloseHistory.addEventListener('click', () => historyModal.classList.add('hidden'));
 
+  // Modal Nhập Dữ liệu JSON / Link
+  const btnOpenImportModal = document.getElementById('btnOpenImportModal');
+  const btnCloseImport = document.getElementById('btnCloseImport');
+  const importModal = document.getElementById('importModal');
+  const btnProcessImport = document.getElementById('btnProcessImport');
+
+  if (btnOpenImportModal) {
+    btnOpenImportModal.addEventListener('click', () => importModal.classList.remove('hidden'));
+  }
+  if (btnCloseImport) {
+    btnCloseImport.addEventListener('click', () => importModal.classList.add('hidden'));
+  }
+  if (btnProcessImport) {
+    btnProcessImport.addEventListener('click', handleProcessImport);
+  }
+
   // Xử lý chuyển đổi Tab danh mục
   const tabButtons = document.querySelectorAll('.tab-btn');
   tabButtons.forEach(btn => {
@@ -145,6 +161,100 @@ function setupEventListeners() {
       filterAndRenderTree(inputKeyword.value.toLowerCase().trim());
     });
   });
+}
+
+/**
+ * Xử lý nhập thủ công JSON Graph API hoặc danh sách Link
+ */
+async function handleProcessImport() {
+  const importRawText = document.getElementById('importRawText');
+  const raw = (importRawText?.value || '').trim();
+  const importModal = document.getElementById('importModal');
+
+  if (!raw) {
+    alert('Vui lòng dán nội dung JSON hoặc đường dẫn bài viết Facebook.');
+    return;
+  }
+
+  try {
+    let targetUid = currentProfile ? currentProfile.uid : 'imported_user';
+    const activities = [];
+
+    // Thử parse JSON
+    if (raw.startsWith('[') || raw.startsWith('{')) {
+      const parsed = JSON.parse(raw);
+      const list = Array.isArray(parsed) ? parsed : (parsed.data && Array.isArray(parsed.data) ? parsed.data : [parsed]);
+
+      for (const item of list) {
+        if (item.id || item.post_id || item.message) {
+          const act = parseGraphApiItem(item, 'comments', targetUid);
+          activities.push({
+            activity_id: `import_${item.id || Math.random().toString(36).slice(2, 9)}`,
+            target_user_id: targetUid,
+            activity_type: item.activity_type || (item.message ? 'comments' : 'author_posts'),
+            post_id: act.post_id || item.id,
+            postUrl: act.postUrl,
+            authorName: act.authorName || 'Dữ liệu nhập',
+            post_author_id: (item.from && item.from.id) || '',
+            content: '',
+            commentText: item.message || '',
+            timestamp: act.timestamp || Date.now(),
+            year: act.year || new Date().getFullYear(),
+            verified: true
+          });
+        }
+      }
+    } else {
+      // Parse danh sách liên kết
+      const lines = raw.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.includes('facebook.com')) {
+          const postId = extractPostId(trimmed) || `imported_${Math.random().toString(36).slice(2, 9)}`;
+          activities.push({
+            activity_id: `import_${postId}`,
+            target_user_id: targetUid,
+            activity_type: 'author_posts',
+            post_id: postId,
+            postUrl: trimmed,
+            authorName: 'Liên kết đã nhập',
+            post_author_id: '',
+            content: '',
+            commentText: '',
+            timestamp: Date.now(),
+            year: new Date().getFullYear(),
+            verified: true
+          });
+        }
+      }
+    }
+
+    if (activities.length === 0) {
+      alert('Không nhận diện được định dạng dữ liệu hợp lệ. Vui lòng kiểm tra lại JSON hoặc URL.');
+      return;
+    }
+
+    if (!currentProfile) {
+      currentProfile = {
+        uid: targetUid,
+        name: 'Hồ sơ Nhập dữ liệu',
+        avatarUrl: '',
+        profileUrl: `https://www.facebook.com/${targetUid}`,
+        username: ''
+      };
+      renderTargetInfo(currentProfile);
+      await saveProfile(currentProfile);
+    }
+
+    await saveActivities(activities);
+    await refreshTreeData();
+    importModal.classList.add('hidden');
+    importRawText.value = '';
+    alert(`Đã nạp thành công ${activities.length} hoạt động vào cây dòng thời gian!`);
+
+  } catch (err) {
+    alert('Lỗi xử lý dữ liệu: ' + err.message);
+  }
 }
 
 /**
@@ -160,6 +270,16 @@ async function handleLiveScan() {
   setScanningState(true);
   updateProgress('Đang kết nối với tab Facebook đang mở...', 15);
 
+  // Tự động inject Content Script vào tab nếu tab chưa được nạp sẵn
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['content/scraper.js']
+    });
+  } catch (e) {
+    console.log('Script injection note:', e);
+  }
+
   const shouldAutoScroll = chkAutoScroll ? chkAutoScroll.checked : true;
   const autoScrollSteps = shouldAutoScroll ? 4 : 0;
 
@@ -172,7 +292,7 @@ async function handleLiveScan() {
       action: 'EXTRACT_DOM_DEEP',
       autoScrollSteps: autoScrollSteps
     }).catch(err => {
-      throw new Error('Chưa kết nối được Content Script. Hãy bấm F5 tải lại tab Facebook đó rồi bấm quét lại.');
+      throw new Error('Chưa kết nối được với trang Facebook. Hãy tải lại (F5) tab Facebook đó rồi bấm quét lại.');
     });
 
     if (!domResp || !domResp.success) {

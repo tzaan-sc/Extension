@@ -64,102 +64,126 @@ function scanCurrentDOM() {
   const photos = [];
   const seenUrls = new Set();
 
-  // 1. Quét các bài viết (role="article" hoặc feed units)
-  const articleNodes = document.querySelectorAll('div[role="article"], div[data-pagelet^="ProfileTimeline"], div[data-pagelet^="FeedUnit"]');
+  // 1. Quét toàn bộ thẻ <a> trên trang Facebook
+  const allAnchors = document.querySelectorAll('a[href]');
   
-  articleNodes.forEach(art => {
-    // Tìm link permalink trong bài
-    const links = art.querySelectorAll('a[href*="/posts/"], a[href*="/share/p/"], a[href*="permalink.php"], a[href*="pfbid0"], a[href*="/photo"]');
-    let postUrl = '';
-
-    for (const a of links) {
-      let href = a.href;
-      if (!href) continue;
-
-      if (href.includes('pfbid0')) {
-        const match = href.match(/https:\/\/[^\/]+(?:\/[^\/]+)?\/posts\/pfbid0[a-zA-Z0-9]+/);
-        if (match) { postUrl = match[0]; break; }
-      } else if (href.includes('/share/p/')) {
-        const match = href.match(/https:\/\/[^\/]+\/share\/p\/[a-zA-Z0-9]+/);
-        if (match) { postUrl = match[0]; break; }
-      } else if (href.includes('permalink.php')) {
-        const match = href.match(/https:\/\/[^\/]+\/permalink\.php\?story_fbid=[^&]+&id=\d+/);
-        if (match) { postUrl = match[0]; break; }
-      } else if (href.includes('/posts/')) {
-        const match = href.match(/https:\/\/[^\/]+(?:\/[^\/]+)?\/posts\/\d+/);
-        if (match) { postUrl = match[0]; break; }
-      }
-    }
-
-    // Nếu không tìm thấy trong bài, quét các thẻ link phụ
-    if (!postUrl && links.length > 0) {
-      postUrl = links[0].href.split('?')[0];
-    }
-
-    if (postUrl && !seenUrls.has(postUrl)) {
-      seenUrls.add(postUrl);
-
-      // Trích xuất nội dung văn bản
-      const textNodes = art.querySelectorAll('div[data-ad-preview="message"], div[dir="auto"][style*="text-align"], div[dir="auto"]');
-      let textSnippet = '';
-      for (const tn of textNodes) {
-        const t = tn.innerText.trim();
-        if (t && t.length > textSnippet.length && !t.includes('Thích') && !t.includes('Bình luận') && !t.includes('Chia sẻ')) {
-          textSnippet = t;
-        }
-      }
-
-      // Trích xuất tên tác giả
-      const authorNode = art.querySelector('h2, h3, strong, a[role="link"] > span[dir="auto"]');
-      const authorName = authorNode ? authorNode.innerText.trim() : '';
-
-      posts.push({
-        url: postUrl,
-        textSnippet: textSnippet.slice(0, 500),
-        authorName: authorName
-      });
-    }
-
-    // 2. Quét bình luận nằm trong article
-    const commentNodes = art.querySelectorAll('div[aria-label*="Bình luận"], div[aria-label*="Comment"], div[role="article"]');
-    commentNodes.forEach(cNode => {
-      if (cNode === art) return;
-      const cTextNode = cNode.querySelector('div[dir="auto"]');
-      const cAuthorNode = cNode.querySelector('a[role="link"] span, strong, span[dir="auto"]');
-      const cText = cTextNode ? cTextNode.innerText.trim() : '';
-      const cAuthor = cAuthorNode ? cAuthorNode.innerText.trim() : '';
-
-      if (cText && cText !== textSnippet) {
-        comments.push({
-          commentText: cText,
-          authorName: cAuthor,
-          postUrl: postUrl || window.location.href
-        });
-      }
-    });
-  });
-
-  // 3. Quét các thẻ a độc lập nếu cấu trúc DOM phức tạp
-  const allAnchors = document.querySelectorAll('a[href*="pfbid0"], a[href*="/share/p/"], a[href*="permalink.php?"]');
   allAnchors.forEach(a => {
     let href = a.href;
+    if (!href || href.startsWith('javascript:') || href === '#' || href.includes('/login') || href.includes('/help/')) return;
+
+    let cleanUrl = '';
+    let type = 'post';
+
+    // Nhận diện URL bài viết pfbid0...
     if (href.includes('pfbid0')) {
       const match = href.match(/https:\/\/[^\/]+(?:\/[^\/]+)?\/posts\/pfbid0[a-zA-Z0-9]+/);
-      if (match) href = match[0];
-    } else if (href.includes('/share/p/')) {
+      cleanUrl = match ? match[0] : href.split('?')[0];
+    } 
+    // Nhận diện URL share/p/...
+    else if (href.includes('/share/p/')) {
       const match = href.match(/https:\/\/[^\/]+\/share\/p\/[a-zA-Z0-9]+/);
-      if (match) href = match[0];
-    } else {
-      href = href.split('?')[0];
+      cleanUrl = match ? match[0] : href.split('?')[0];
+    }
+    // Nhận diện permalink.php?story_fbid=...
+    else if (href.includes('permalink.php')) {
+      const match = href.match(/https:\/\/[^\/]+\/permalink\.php\?story_fbid=([^&]+)&id=(\d+)/);
+      if (match) {
+        cleanUrl = `https://www.facebook.com/permalink.php?story_fbid=${match[1]}&id=${match[2]}`;
+      } else {
+        cleanUrl = href.split('&__cft__')[0];
+      }
+    }
+    // Nhận diện story.php
+    else if (href.includes('story.php')) {
+      const fbidMatch = href.match(/story_fbid=([^&]+)/);
+      const idMatch = href.match(/[?&]id=([^&]+)/);
+      if (fbidMatch && idMatch) {
+        cleanUrl = `https://www.facebook.com/permalink.php?story_fbid=${fbidMatch[1]}&id=${idMatch[1]}`;
+      }
+    }
+    // Nhận diện /posts/ số
+    else if (href.match(/\/posts\/\d+/)) {
+      const match = href.match(/https:\/\/[^\/]+(?:\/[^\/]+)?\/posts\/\d+/);
+      cleanUrl = match ? match[0] : href.split('?')[0];
+    }
+    // Nhận diện /groups/.../posts/...
+    else if (href.includes('/groups/') && href.includes('/posts/')) {
+      const match = href.match(/https:\/\/[^\/]+\/groups\/[^\/]+\/posts\/[a-zA-Z0-9_]+/);
+      cleanUrl = match ? match[0] : href.split('?')[0];
+    }
+    // Nhận diện ảnh
+    else if (href.includes('/photo.php') || href.includes('/photos/') || href.includes('/photo/')) {
+      const match = href.match(/fbid=(\d+)/) || href.match(/\/photos\/[^\/]+\/(\d+)/) || href.match(/\/photo\/\?fbid=(\d+)/);
+      if (match) {
+        cleanUrl = `https://www.facebook.com/photo.php?fbid=${match[1]}`;
+        type = 'photo';
+      }
     }
 
-    if (href && !seenUrls.has(href)) {
-      seenUrls.add(href);
-      const container = a.closest('div[role="article"], div[data-ad-preview="message"], div[dir="auto"]');
-      posts.push({
-        url: href,
-        textSnippet: container ? container.innerText.slice(0, 300).trim() : '',
-        authorName: ''
+    if (cleanUrl && !seenUrls.has(cleanUrl)) {
+      seenUrls.add(cleanUrl);
+
+      // Tìm container cha chứa bài viết để trích xuất văn bản thật và tác giả
+      let container = a.closest('div[role="article"], div[data-pagelet^="ProfileTimeline"], div[data-pagelet^="FeedUnit"], div[data-pagelet^="Timeline"]') || a.parentElement;
+      for (let i = 0; i < 8 && container && !container.getAttribute('role'); i++) {
+        if (container.parentElement) container = container.parentElement;
+      }
+
+      let textSnippet = '';
+      let authorName = '';
+
+      if (container) {
+        // Trích xuất văn bản bài viết
+        const textElements = container.querySelectorAll('div[data-ad-preview="message"], div[dir="auto"][style*="text-align"], div[dir="auto"], span[dir="auto"]');
+        for (const el of textElements) {
+          const txt = el.innerText.trim();
+          if (txt && txt.length > textSnippet.length && 
+              !txt.includes('Thích') && !txt.includes('Bình luận') && !txt.includes('Chia sẻ') && 
+              !txt.includes('Gửi') && !txt.startsWith('Xem thêm')) {
+            textSnippet = txt;
+          }
+        }
+
+        // Trích xuất tác giả
+        const authorEl = container.querySelector('h2, h3, strong, a[role="link"] > span[dir="auto"]');
+        if (authorEl) authorName = authorEl.innerText.trim();
+      }
+
+      if (type === 'photo') {
+        photos.push({
+          url: cleanUrl,
+          textSnippet: textSnippet.slice(0, 300),
+          authorName: authorName
+        });
+      } else {
+        posts.push({
+          url: cleanUrl,
+          textSnippet: textSnippet.slice(0, 500),
+          authorName: authorName
+        });
+      }
+    }
+  });
+
+  // 2. Quét bình luận trên toàn bộ DOM
+  const commentContainers = document.querySelectorAll('div[aria-label*="Bình luận"], div[aria-label*="Comment"], ul[role="list"] > li, div[role="article"]');
+  commentContainers.forEach(cBox => {
+    // Chỉ lấy comment con, tránh lấy toàn bộ bài viết lớn
+    if (cBox.querySelector('div[role="article"]')) return;
+
+    const textEl = cBox.querySelector('div[dir="auto"], span[dir="auto"]');
+    const authorEl = cBox.querySelector('a[role="link"] span, strong, span[dir="auto"]');
+    const cText = textEl ? textEl.innerText.trim() : '';
+    const cAuthor = authorEl ? authorEl.innerText.trim() : '';
+
+    if (cText && cText.length > 1 && !cText.includes('Thích') && !cText.includes('Trả lời') && !cText.includes('Chia sẻ')) {
+      const permalinkAnchor = cBox.querySelector('a[href*="comment_id="], a[href*="/posts/"], a[href*="pfbid0"]');
+      const postUrl = permalinkAnchor ? permalinkAnchor.href.split('&__cft__')[0] : window.location.href;
+
+      comments.push({
+        commentText: cText,
+        authorName: cAuthor || 'Bình luận trên Facebook',
+        postUrl: postUrl
       });
     }
   });

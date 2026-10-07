@@ -27,7 +27,10 @@
           <span class="badge-tag">OSINT Profile Timeline</span>
         </div>
       </div>
-      <div class="header-actions">
+      <div class="header-actions" style="display:flex;gap:6px;">
+        <button id="btnOpenImportModal" class="icon-btn" title="Nhập dữ liệu JSON / Dán Link Graph">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        </button>
         <button id="btnHistory" class="icon-btn" title="Lịch sử quét">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
         </button>
@@ -183,6 +186,25 @@
         </div>
         <div class="modal-body" id="historyList">
           <!-- Dynamic profile history list -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Import JSON / Links -->
+    <div id="importModal" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width: 480px;">
+        <div class="modal-header">
+          <h3>📥 Nhập dữ liệu (JSON / Danh sách link)</h3>
+          <button id="btnCloseImport" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body" style="display:flex;flex-direction:column;gap:10px;">
+          <p style="font-size:11px;color:var(--text-secondary);">
+            Dán dữ liệu JSON Graph API (mảng <code>[{"id":"...","message":"..."}]</code>) hoặc danh sách liên kết bài viết Facebook:
+          </p>
+          <textarea id="importRawText" rows="7" style="width:100%;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-sm);color:var(--text-primary);padding:8px;font-family:monospace;font-size:11px;resize:vertical;" placeholder='[&#10;  {&#10;    "id": "100031339263750_2156761761726323",&#10;    "message": "Nội dung bình luận...",&#10;    "created_time": "2026-03-25T06:39:02+0000"&#10;  }&#10;]'></textarea>
+          <button id="btnProcessImport" class="primary-btn" style="justify-content:center;">
+            Xác nhận & Nạp vào cây dòng thời gian
+          </button>
         </div>
       </div>
     </div>
