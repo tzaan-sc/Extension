@@ -44,6 +44,9 @@
       
       <div class="scan-options">
         <label class="checkbox-label">
+          <input type="checkbox" id="chkAuthorPosts" checked> <span>📝 Bài viết đã đăng</span>
+        </label>
+        <label class="checkbox-label">
           <input type="checkbox" id="chkComments" checked> <span>💬 Bình luận</span>
         </label>
         <label class="checkbox-label">
@@ -94,6 +97,7 @@
     <section id="quickActionsBox" class="quick-actions-card hidden">
       <div class="quick-title">⚡ Lối tắt Graph Search (Facebook):</div>
       <div class="quick-buttons">
+        <a id="quickBtnAuthorPosts" href="#" target="_blank" class="quick-btn" title="Mở bài viết của chính người này">📝 Bài đã đăng</a>
         <a id="quickBtnComments" href="#" target="_blank" class="quick-btn" title="Mở danh sách bài viết đã bình luận">💬 Bình luận</a>
         <a id="quickBtnTaggedPosts" href="#" target="_blank" class="quick-btn" title="Mở bài viết được tag">🏷️ Bài viết tag</a>
         <a id="quickBtnPhotos" href="#" target="_blank" class="quick-btn" title="Mở ảnh được tag">📸 Ảnh tag</a>
@@ -104,6 +108,11 @@
 
     <!-- Summary Stats Bar -->
     <section id="statsSection" class="stats-row hidden">
+      <div class="stat-pill" data-type="author_posts">
+        <span class="stat-emoji">📝</span>
+        <span class="stat-count" id="statAuthorPosts">0</span>
+        <span class="stat-name">Bài đã đăng</span>
+      </div>
       <div class="stat-pill" data-type="comments">
         <span class="stat-emoji">💬</span>
         <span class="stat-count" id="statComments">0</span>
@@ -113,11 +122,6 @@
         <span class="stat-emoji">🏷️</span>
         <span class="stat-count" id="statTaggedPosts">0</span>
         <span class="stat-name">Bài gắn thẻ</span>
-      </div>
-      <div class="stat-pill" data-type="mentions">
-        <span class="stat-emoji">@</span>
-        <span class="stat-count" id="statMentions">0</span>
-        <span class="stat-name">Nhắc tên</span>
       </div>
       <div class="stat-pill" data-type="tagged_photos">
         <span class="stat-emoji">📸</span>

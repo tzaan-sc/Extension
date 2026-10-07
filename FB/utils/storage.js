@@ -166,6 +166,7 @@ export async function getActivitiesTree(uid) {
       rawList.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
       const tree = {
+        author_posts: {},
         comments: {},
         tagged_posts: {},
         mentions: {},
@@ -175,6 +176,7 @@ export async function getActivitiesTree(uid) {
       };
 
       const counts = {
+        author_posts: 0,
         comments: 0,
         tagged_posts: 0,
         mentions: 0,

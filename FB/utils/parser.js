@@ -157,6 +157,7 @@ export function exportToHTMLReport(profile, tree, counts) {
 
 function renderHTMLTree(tree) {
   const typeLabels = {
+    author_posts: '📝 Bài viết đã đăng (Tác giả)',
     comments: '💬 Bình luận của người này',
     tagged_posts: '🏷️ Bài viết được gắn thẻ',
     mentions: '@ Được nhắc tên',

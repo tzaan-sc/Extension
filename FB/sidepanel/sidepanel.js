@@ -17,6 +17,7 @@ const btnCloseHistory = document.getElementById('btnCloseHistory');
 const historyModal = document.getElementById('historyModal');
 const historyList = document.getElementById('historyList');
 
+const chkAuthorPosts = document.getElementById('chkAuthorPosts');
 const chkComments = document.getElementById('chkComments');
 const chkTaggedPosts = document.getElementById('chkTaggedPosts');
 const chkPhotosVideos = document.getElementById('chkPhotosVideos');
@@ -33,9 +34,9 @@ const targetUidText = document.getElementById('targetUidText');
 const targetProfileLink = document.getElementById('targetProfileLink');
 
 const statsSection = document.getElementById('statsSection');
+const statAuthorPosts = document.getElementById('statAuthorPosts');
 const statComments = document.getElementById('statComments');
 const statTaggedPosts = document.getElementById('statTaggedPosts');
-const statMentions = document.getElementById('statMentions');
 const statPhotos = document.getElementById('statPhotos');
 
 const filterSection = document.getElementById('filterSection');
@@ -152,27 +153,36 @@ async function handleStartScan() {
 
     const allActivities = [];
 
-    // 2. Quét Tagged Photos / Videos
+    // 2. Quét Bài viết đã đăng (Tác giả - cả bài trên tường lẫn bài trong nhóm/bài ẩn)
+    if (chkAuthorPosts && chkAuthorPosts.checked) {
+      updateProgress('Đang quét bài viết do tài khoản này đăng...', 20);
+      const authorActs = await scanner.scanAuthorPosts(currentProfile.uid, currentProfile.name, updateProgress);
+      allActivities.push(...authorActs);
+      await saveActivities(authorActs);
+      await refreshTreeData();
+    }
+
+    // 3. Quét Tagged Photos / Videos
     if (chkPhotosVideos.checked) {
-      updateProgress('Đang quét ảnh và video được gắn thẻ...', 25);
+      updateProgress('Đang quét ảnh và video được gắn thẻ...', 45);
       const mediaActs = await scanner.scanTaggedMedia(currentProfile.uid, updateProgress);
       allActivities.push(...mediaActs);
       await saveActivities(mediaActs);
       await refreshTreeData();
     }
 
-    // 3. Quét Tagged Posts
+    // 4. Quét Tagged Posts
     if (chkTaggedPosts.checked) {
-      updateProgress('Đang tìm bài viết được gắn thẻ / nhắc tên...', 55);
+      updateProgress('Đang tìm bài viết được gắn thẻ / nhắc tên...', 70);
       const postActs = await scanner.scanTaggedPostsAndMentions(currentProfile.uid, updateProgress);
       allActivities.push(...postActs);
       await saveActivities(postActs);
       await refreshTreeData();
     }
 
-    // 4. Quét Comments
+    // 5. Quét Comments
     if (chkComments.checked) {
-      updateProgress('Đang thu thập lịch sử bình luận công khai...', 80);
+      updateProgress('Đang thu thập lịch sử bình luận công khai...', 85);
       const commentActs = await scanner.scanComments(currentProfile.uid, updateProgress);
       allActivities.push(...commentActs);
       await saveActivities(commentActs);
@@ -217,6 +227,7 @@ function renderTargetInfo(profile) {
   // Gắn liên kết Graph Search nhanh
   const uid = profile.uid;
   const quickActionsBox = document.getElementById('quickActionsBox');
+  const quickBtnAuthorPosts = document.getElementById('quickBtnAuthorPosts');
   const quickBtnComments = document.getElementById('quickBtnComments');
   const quickBtnTaggedPosts = document.getElementById('quickBtnTaggedPosts');
   const quickBtnPhotos = document.getElementById('quickBtnPhotos');
@@ -224,11 +235,12 @@ function renderTargetInfo(profile) {
   const quickBtnLikes = document.getElementById('quickBtnLikes');
 
   if (quickActionsBox) {
-    quickBtnComments.href = `https://www.facebook.com/search/${uid}/posts-commented`;
-    quickBtnTaggedPosts.href = `https://www.facebook.com/search/posts/?q=${uid}`;
-    quickBtnPhotos.href = `https://www.facebook.com/${uid}/photos_of`;
-    quickBtnVideos.href = `https://www.facebook.com/${uid}/videos_of`;
-    quickBtnLikes.href = `https://www.facebook.com/search/${uid}/stories-liked`;
+    if (quickBtnAuthorPosts) quickBtnAuthorPosts.href = `https://www.facebook.com/${uid}`;
+    if (quickBtnComments) quickBtnComments.href = `https://www.facebook.com/search/${uid}/posts-commented`;
+    if (quickBtnTaggedPosts) quickBtnTaggedPosts.href = `https://www.facebook.com/search/posts/?q=${uid}`;
+    if (quickBtnPhotos) quickBtnPhotos.href = `https://www.facebook.com/${uid}/photos_of`;
+    if (quickBtnVideos) quickBtnVideos.href = `https://www.facebook.com/${uid}/videos_of`;
+    if (quickBtnLikes) quickBtnLikes.href = `https://www.facebook.com/search/${uid}/stories-liked`;
     quickActionsBox.classList.remove('hidden');
   }
 
@@ -246,15 +258,16 @@ async function refreshTreeData() {
   currentRawList = result.rawList;
 
   // Cập nhật thống kê stats
-  statComments.textContent = result.counts.comments;
-  statTaggedPosts.textContent = result.counts.tagged_posts;
-  statMentions.textContent = result.counts.mentions;
-  statPhotos.textContent = result.counts.tagged_photos + result.counts.tagged_videos;
+  if (statAuthorPosts) statAuthorPosts.textContent = result.counts.author_posts || 0;
+  if (statComments) statComments.textContent = result.counts.comments || 0;
+  if (statTaggedPosts) statTaggedPosts.textContent = result.counts.tagged_posts || 0;
+  if (statPhotos) statPhotos.textContent = (result.counts.tagged_photos || 0) + (result.counts.tagged_videos || 0);
 
   renderTree(result.tree);
 }
 
 const TYPE_CONFIG = {
+  author_posts: { label: 'Bài viết đã đăng (Tác giả)', emoji: '📝' },
   comments: { label: 'Bình luận', emoji: '💬' },
   tagged_posts: { label: 'Bài viết được gắn thẻ', emoji: '🏷️' },
   mentions: { label: 'Được nhắc tên', emoji: '@' },
@@ -333,7 +346,7 @@ function createActivityCard(item) {
 
   card.innerHTML = `
     <div class="activity-header">
-      <span class="activity-author">${item.authorName || 'Nội dung công khai'}</span>
+      <span class="activity-author">${escapeHTML(item.authorName || 'Nội dung công khai')}</span>
       <span>${formatTimestamp(item.timestamp)}</span>
     </div>
     ${item.content ? `<div class="activity-content">${escapeHTML(item.content)}</div>` : ''}
@@ -343,7 +356,13 @@ function createActivityCard(item) {
         <div class="activity-content">${escapeHTML(item.commentText)}</div>
       </div>
     ` : ''}
-    ${item.postUrl ? `<a href="${item.postUrl}" target="_blank" class="activity-link">🔗 Xem bài viết gốc trên Facebook</a>` : ''}
+    ${item.postUrl ? `
+      <div style="margin-top: 4px;">
+        <a href="${item.postUrl}" target="_blank" class="activity-link" style="word-break: break-all;">
+          🔗 Link: ${escapeHTML(item.postUrl)}
+        </a>
+      </div>
+    ` : ''}
   `;
 
   return card;
@@ -363,7 +382,8 @@ function filterAndRenderTree(keyword) {
       const matched = items.filter(it => 
         (it.content && it.content.toLowerCase().includes(keyword)) ||
         (it.commentText && it.commentText.toLowerCase().includes(keyword)) ||
-        (it.authorName && it.authorName.toLowerCase().includes(keyword))
+        (it.authorName && it.authorName.toLowerCase().includes(keyword)) ||
+        (it.postUrl && it.postUrl.toLowerCase().includes(keyword))
       );
       if (matched.length > 0) {
         filteredTree[type][year] = matched;
