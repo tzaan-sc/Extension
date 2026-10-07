@@ -1,4 +1,42 @@
 /**
+ * Trích xuất Post ID chuẩn xác từ URL hoặc chuỗi định danh (pfbid0..., story_fbid, numeric ID)
+ */
+export function extractPostId(urlOrId) {
+  if (!urlOrId) return null;
+  const str = String(urlOrId).trim();
+
+  // Dạng Graph API USERID_POSTID
+  if (str.includes('_')) {
+    const parts = str.split('_');
+    if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+      return parts[1];
+    }
+  }
+
+  // Dạng pfbid0...
+  const pfbidMatch = str.match(/pfbid0[a-zA-Z0-9]+/);
+  if (pfbidMatch) return pfbidMatch[0];
+
+  // Dạng /posts/123456789
+  const postNumMatch = str.match(/\/posts\/(\d+)/);
+  if (postNumMatch) return postNumMatch[1];
+
+  // Dạng story_fbid=...
+  const storyFbidMatch = str.match(/story_fbid=([a-zA-Z0-9_]+)/);
+  if (storyFbidMatch) return storyFbidMatch[1];
+
+  // Dạng /share/p/...
+  const shareMatch = str.match(/\/share\/p\/([a-zA-Z0-9]+)/);
+  if (shareMatch) return `share_${shareMatch[1]}`;
+
+  // Dạng fbid=...
+  const fbidMatch = str.match(/fbid=(\d+)/);
+  if (fbidMatch) return fbidMatch[1];
+
+  return str;
+}
+
+/**
  * Chuyển đổi ID dạng "USERID_POSTID" hoặc "PAGEID_POSTID" thành Link Facebook trực tiếp
  */
 export function buildFacebookPostUrl(idString) {

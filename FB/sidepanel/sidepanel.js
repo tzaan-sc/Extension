@@ -381,9 +381,15 @@ function createActivityCard(item) {
   const card = document.createElement('div');
   card.className = 'activity-card';
 
+  const isVerified = item.verified !== false && item.post_id && !String(item.post_id).startsWith('post_');
+
   card.innerHTML = `
     <div class="activity-header">
-      <span class="activity-author">${escapeHTML(item.authorName || 'Nội dung công khai')}</span>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <span class="activity-author">${escapeHTML(item.authorName || 'Nội dung công khai')}</span>
+        ${item.post_id ? `<span class="post-id-badge" title="ID bài viết gốc">🆔 ${escapeHTML(item.post_id)}</span>` : ''}
+        ${isVerified ? `<span class="verified-badge" title="Đã xác thực định danh bài viết gốc">🛡️ Verified</span>` : `<span class="unverified-badge" title="Chưa xác thực trực tiếp">⚠️ Unverified</span>`}
+      </div>
       <span>${formatTimestamp(item.timestamp)}</span>
     </div>
     ${item.content ? `<div class="activity-content">${escapeHTML(item.content)}</div>` : ''}
@@ -394,9 +400,9 @@ function createActivityCard(item) {
       </div>
     ` : ''}
     ${item.postUrl ? `
-      <div style="margin-top: 4px;">
+      <div style="margin-top: 5px;">
         <a href="${item.postUrl}" target="_blank" class="activity-link" style="word-break: break-all;">
-          🔗 Link: ${escapeHTML(item.postUrl)}
+          🔗 Link bài viết: ${escapeHTML(item.postUrl)}
         </a>
       </div>
     ` : ''}

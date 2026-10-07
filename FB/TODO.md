@@ -36,11 +36,12 @@ FB/
   - Khai báo quyền: `"sidePanel"`, `"storage"`, `"unlimitedStorage"`, `"cookies"`, `"activeTab"`.
   - Khai báo host permissions: `*://*.facebook.com/*`.
   - Cấu hình `side_panel` mở giao diện `sidepanel/sidepanel.html`.
-- [x] **1.2. Xây dựng Module Lưu Trữ `utils/storage.js` (IndexedDB)**
-  - Thiết kế Schema lưu trữ theo cấu trúc:
-    - Table `profiles`: `{ uid, name, username, avatarUrl, lastScannedAt }`
-    - Table `activities`: `{ id, targetUid, type, year, timestamp, postUrl, authorName, authorUrl, content, extraData }`
-  - Các hàm tiện ích: `saveProfile()`, `saveActivities()`, `getActivitiesTree(uid)`, `deleteProfile(uid)`.
+- [x] **1.2. Xây dựng Module Lưu Trữ `utils/storage.js` (Mô hình Quan hệ Chuẩn hóa `post_id`)**
+  - Thiết kế Schema quan hệ:
+    - **`USERS` (`profiles`)**: `{ uid, name, username, avatarUrl, updatedAt }`
+    - **`POSTS` (`posts`)**: `{ post_id, author_id, author_name, url, content, created_at }`
+    - **`ACTIVITIES` (`activities`)**: `{ activity_id, target_user_id, activity_type, post_id, activity_created_at, comment_text, verified }`
+  - Các hàm tiện ích: `saveProfile()`, `saveActivitiesAndPosts()`, `getActivitiesTree(uid)`, `deleteProfile(uid)`.
 
 ---
 
