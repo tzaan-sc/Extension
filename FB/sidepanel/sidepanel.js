@@ -1,10 +1,11 @@
 import { FacebookScannerEngine } from '../utils/fb_api.js';
 import { saveProfile, saveActivities, getActivitiesTree, getAllProfiles, getProfile, deleteProfile, clearActivitiesOfUid, clearAllDatabase } from '../utils/storage.js';
-import { exportToJSON, exportToCSV, exportToHTMLReport, formatTimestamp } from '../utils/parser.js';
+import { exportToJSON, exportToCSV, exportToHTMLReport, formatTimestamp, extractPostId } from '../utils/parser.js';
 
 // DOM Elements
 const inputUrl = document.getElementById('inputUrl');
 const btnPasteUrl = document.getElementById('btnPasteUrl');
+const btnLiveScan = document.getElementById('btnLiveScan');
 const btnStartScan = document.getElementById('btnStartScan');
 const btnPauseScan = document.getElementById('btnPauseScan');
 const btnStopScan = document.getElementById('btnStopScan');
@@ -17,6 +18,7 @@ const chkAuthorPosts = document.getElementById('chkAuthorPosts');
 const chkComments = document.getElementById('chkComments');
 const chkTaggedPosts = document.getElementById('chkTaggedPosts');
 const chkPhotosVideos = document.getElementById('chkPhotosVideos');
+const chkAutoScroll = document.getElementById('chkAutoScroll');
 
 const statusSection = document.getElementById('statusSection');
 const statusTitle = document.getElementById('statusTitle');
@@ -75,7 +77,12 @@ function setupEventListeners() {
     }
   });
 
-  // Bắt đầu quét
+  // Quét trực tiếp tab Facebook đang mở (Khuyên dùng)
+  if (btnLiveScan) {
+    btnLiveScan.addEventListener('click', handleLiveScan);
+  }
+
+  // Bắt đầu quét nền qua URL/UID
   btnStartScan.addEventListener('click', handleStartScan);
 
   // Tạm dừng / Tiếp tục
@@ -138,6 +145,128 @@ function setupEventListeners() {
       filterAndRenderTree(inputKeyword.value.toLowerCase().trim());
     });
   });
+}
+
+/**
+ * Quét trực tiếp và chính xác 100% từ Tab Facebook đang mở
+ */
+async function handleLiveScan() {
+  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.url || !tab.url.includes('facebook.com')) {
+    alert('Vui lòng mở một tab Facebook (Trang cá nhân, Dòng thời gian hoặc Bài viết) trước khi bấm nút này.');
+    return;
+  }
+
+  setScanningState(true);
+  updateProgress('Đang kết nối với tab Facebook đang mở...', 15);
+
+  const shouldAutoScroll = chkAutoScroll ? chkAutoScroll.checked : true;
+  const autoScrollSteps = shouldAutoScroll ? 4 : 0;
+
+  if (shouldAutoScroll) {
+    updateProgress('Đang tự động cuộn trang Facebook để tải thêm bài viết...', 35);
+  }
+
+  try {
+    const domResp = await chrome.tabs.sendMessage(tab.id, {
+      action: 'EXTRACT_DOM_DEEP',
+      autoScrollSteps: autoScrollSteps
+    }).catch(err => {
+      throw new Error('Chưa kết nối được Content Script. Hãy bấm F5 tải lại tab Facebook đó rồi bấm quét lại.');
+    });
+
+    if (!domResp || !domResp.success) {
+      throw new Error(domResp?.error || 'Không bóc tách được dữ liệu từ tab Facebook.');
+    }
+
+    updateProgress('Đang phân tích cấu trúc bài viết và bình luận...', 75);
+
+    let uid = domResp.profile?.uid || '';
+    if (!uid) {
+      const match = tab.url.match(/profile\.php\?id=(\d+)/) || tab.url.match(/facebook\.com\/([a-zA-Z0-9.]+)/);
+      if (match) uid = match[1];
+    }
+    if (!uid) uid = 'fb_tab_' + Date.now();
+
+    const profileName = domResp.profile?.name || tab.title.replace(' | Facebook', '').replace('- Facebook', '').trim() || 'Người dùng Facebook';
+    const avatarUrl = domResp.profile?.avatarUrl || '';
+
+    currentProfile = {
+      uid: uid,
+      name: profileName,
+      avatarUrl: avatarUrl,
+      profileUrl: tab.url,
+      username: ''
+    };
+
+    renderTargetInfo(currentProfile);
+    await saveProfile(currentProfile);
+    await clearActivitiesOfUid(currentProfile.uid);
+
+    const activities = [];
+
+    // Chuyển đổi Posts bóc tách từ DOM
+    if (domResp.posts && domResp.posts.length > 0) {
+      domResp.posts.forEach((p, idx) => {
+        const postId = extractPostId(p.url) || `post_${idx}_${Date.now()}`;
+        activities.push({
+          activity_id: `post_${uid}_${postId}`,
+          target_user_id: uid,
+          activity_type: 'author_posts',
+          post_id: postId,
+          postUrl: p.url,
+          authorName: p.authorName || profileName,
+          post_author_id: uid,
+          content: p.textSnippet || '',
+          commentText: '',
+          timestamp: Date.now() - (idx * 3600000),
+          year: new Date().getFullYear(),
+          verified: true
+        });
+      });
+    }
+
+    // Chuyển đổi Comments bóc tách từ DOM
+    if (domResp.comments && domResp.comments.length > 0) {
+      domResp.comments.forEach((c, idx) => {
+        const postId = extractPostId(c.postUrl) || `comment_post_${idx}`;
+        activities.push({
+          activity_id: `comment_${uid}_${idx}_${Date.now()}`,
+          target_user_id: uid,
+          activity_type: 'comments',
+          post_id: postId,
+          postUrl: c.postUrl,
+          authorName: c.authorName || 'Bình luận trên bài',
+          post_author_id: '',
+          content: '',
+          commentText: c.commentText,
+          timestamp: Date.now() - (idx * 1800000),
+          year: new Date().getFullYear(),
+          verified: true
+        });
+      });
+    }
+
+    if (activities.length === 0) {
+      updateProgress('Không tìm thấy bài viết nào trên trang hiện tại.', 100);
+      alert('Không tìm thấy bài viết trên khung nhìn hiện tại. Bạn hãy cuộn chuột xuống trên trang Facebook để tải thêm bài rồi bấm Quét lại nhé!');
+    } else {
+      await saveActivities(activities);
+      await refreshTreeData();
+      updateProgress(`Thành công! Đã trích xuất ${activities.length} bài viết và hoạt động thật.`, 100);
+    }
+
+    setTimeout(() => {
+      statusSection.classList.add('hidden');
+    }, 2500);
+
+  } catch (err) {
+    console.error('[SidePanel] Lỗi quét tab:', err);
+    statusTitle.textContent = 'Lỗi quét tab';
+    statusDetail.textContent = err.message || 'Lỗi không xác định';
+  } finally {
+    setScanningState(false);
+  }
 }
 
 async function handleStartScan() {
