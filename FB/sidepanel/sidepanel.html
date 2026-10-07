@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facebook Activity Scanner</title>
+  <link rel="stylesheet" href="sidepanel.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            <path d="M11 8v6"></path>
+            <path d="M8 11h6"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>FB Activity Scanner</h1>
+          <span class="badge-tag">OSINT Profile Timeline</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btnHistory" class="icon-btn" title="Lịch sử quét">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Scan Input Card -->
+    <section class="scan-input-card">
+      <label for="inputUrl" class="input-label">Đường dẫn Facebook Profile (URL hoặc UID)</label>
+      <div class="input-group">
+        <input type="text" id="inputUrl" placeholder="https://www.facebook.com/username hoặc 1000..." autocomplete="off">
+        <button id="btnPasteUrl" class="mini-btn" title="Dán từ Clipboard">Dán</button>
+      </div>
+      
+      <div class="scan-options">
+        <label class="checkbox-label">
+          <input type="checkbox" id="chkComments" checked> <span>💬 Bình luận</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="chkTaggedPosts" checked> <span>🏷️ Bài viết tag</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="chkPhotosVideos" checked> <span>📸 Tagged Ảnh/Video</span>
+        </label>
+      </div>
+
+      <div class="action-row">
+        <button id="btnStartScan" class="primary-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          Bắt đầu quét
+        </button>
+        <button id="btnPauseScan" class="secondary-btn hidden">Tạm dừng</button>
+        <button id="btnStopScan" class="danger-btn hidden">Dừng</button>
+      </div>
+    </section>
+
+    <!-- Status / Progress Banner -->
+    <section id="statusSection" class="status-card hidden">
+      <div class="status-header">
+        <div class="status-spinner"></div>
+        <div class="status-info">
+          <span id="statusTitle" class="status-title">Đang xác định danh tính...</span>
+          <span id="statusDetail" class="status-detail">Kết nối với Facebook session...</span>
+        </div>
+      </div>
+      <div class="progress-bar-bg">
+        <div id="progressBar" class="progress-bar-fill" style="width: 0%"></div>
+      </div>
+    </section>
+
+    <!-- Target Profile Info Box -->
+    <section id="targetInfoBox" class="target-card hidden">
+      <img id="targetAvatar" src="https://via.placeholder.com/64" alt="Avatar" class="target-avatar">
+      <div class="target-details">
+        <h2 id="targetName" class="target-name">Đang tải...</h2>
+        <div class="target-meta">
+          <span class="uid-tag">UID: <strong id="targetUidText">-</strong></span>
+          <a id="targetProfileLink" href="#" target="_blank" class="profile-link">Xem trên FB ↗</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Summary Stats Bar -->
+    <section id="statsSection" class="stats-row hidden">
+      <div class="stat-pill" data-type="comments">
+        <span class="stat-emoji">💬</span>
+        <span class="stat-count" id="statComments">0</span>
+        <span class="stat-name">Bình luận</span>
+      </div>
+      <div class="stat-pill" data-type="tagged_posts">
+        <span class="stat-emoji">🏷️</span>
+        <span class="stat-count" id="statTaggedPosts">0</span>
+        <span class="stat-name">Bài gắn thẻ</span>
+      </div>
+      <div class="stat-pill" data-type="mentions">
+        <span class="stat-emoji">@</span>
+        <span class="stat-count" id="statMentions">0</span>
+        <span class="stat-name">Nhắc tên</span>
+      </div>
+      <div class="stat-pill" data-type="tagged_photos">
+        <span class="stat-emoji">📸</span>
+        <span class="stat-count" id="statPhotos">0</span>
+        <span class="stat-name">Ảnh/Video</span>
+      </div>
+    </section>
+
+    <!-- Search & Filter within Results -->
+    <section id="filterSection" class="filter-card hidden">
+      <div class="filter-input-wrap">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="inputKeyword" placeholder="Lọc từ khóa trong nội dung/bình luận...">
+      </div>
+      <div class="export-dropdown-group">
+        <button id="btnExportJson" class="tool-btn" title="Xuất JSON">JSON</button>
+        <button id="btnExportCsv" class="tool-btn" title="Xuất CSV / Excel">CSV</button>
+        <button id="btnExportHtml" class="tool-btn" title="Xuất Báo cáo HTML">HTML</button>
+      </div>
+    </section>
+
+    <!-- Main Activity Tree View -->
+    <main class="tree-container" id="treeContainer">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">📂</div>
+        <h3>Chưa có dữ liệu hoạt động</h3>
+        <p>Nhập liên kết trang cá nhân Facebook ở trên và nhấn <strong>Bắt đầu quét</strong> để xây dựng hồ sơ thời gian.</p>
+      </div>
+
+      <div id="treeContent" class="tree-content hidden">
+        <!-- Dynamic Tree Content will be rendered here -->
+      </div>
+    </main>
+
+    <!-- Modal History -->
+    <div id="historyModal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Hồ sơ đã lưu</h3>
+          <button id="btnCloseHistory" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body" id="historyList">
+          <!-- Dynamic profile history list -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>
