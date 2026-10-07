@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Facebook Activity Scanner",
+  "name": "Social Activity Lens",
   "version": "1.0.0",
-  "description": "Thu thập và tổng hợp hồ sơ hoạt động công khai của tài khoản Facebook theo dạng cây thời gian.",
+  "description": "Thu thập và tổng hợp hoạt động công khai dạng cây thời gian.",
   "permissions": [
     "sidePanel",
     "storage",
@@ -21,7 +21,7 @@
     "default_path": "sidepanel/sidepanel.html"
   },
   "action": {
-    "default_title": "Mở Facebook Activity Scanner",
+    "default_title": "Mở Social Activity Lens",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
