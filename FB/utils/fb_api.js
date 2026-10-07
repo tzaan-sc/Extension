@@ -1,4 +1,4 @@
-import { parseFacebookUrl, parseGraphApiItem, buildFacebookPostUrl } from './parser.js';
+import { parseFacebookUrl, parseGraphApiItem, buildFacebookPostUrl, extractAllFacebookPostLinks } from './parser.js';
 
 export class FacebookScannerEngine {
   constructor() {
@@ -29,7 +29,6 @@ export class FacebookScannerEngine {
    */
   extractJsonBlobs(html) {
     const blobs = [];
-    // Tìm các thẻ script chứa JSON
     const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
     let match;
     while ((match = scriptRegex.exec(html)) !== null) {
@@ -157,102 +156,92 @@ export class FacebookScannerEngine {
   async scanAuthorPosts(uid, authorName, onProgress) {
     const activities = [];
     await this.checkFlowState();
-    if (onProgress) onProgress(`Đang quét bài viết do ${authorName || uid} đăng (kể cả bài ẩn nhưng còn công khai)...`, 20);
+    if (onProgress) onProgress(`Đang quét bài viết của ${authorName || uid} (tìm kiếm link pfbid & bài viết công khai)...`, 20);
+
+    const seenUrls = new Set();
 
     try {
-      // 1. Quét từ Profile Timeline chính
+      // 1. Quét trực tiếp từ Profile HTML
       const profileUrl = `https://www.facebook.com/${uid}`;
       const resp = await fetch(profileUrl, { credentials: 'include' });
       if (resp.ok) {
         const html = await resp.text();
-        const jsonBlobs = this.extractJsonBlobs(html);
 
-        // Tìm các story node do chính author_id == uid đăng
-        const stories = this.findNodesRecursively(jsonBlobs, node => {
-          return node && (node.__typename === 'Story' || node.__typename === 'CometStory' || (node.comet_sections && node.comet_sections.content));
-        });
-
-        for (const st of stories.slice(0, 15)) {
-          const postId = st.id || st.post_id || Math.random().toString(36).slice(2, 9);
-          const postText = (st.message && st.message.text) || (st.comet_sections && st.comet_sections.content && st.comet_sections.content.story && st.comet_sections.content.story.message && st.comet_sections.content.story.message.text) || 'Bài viết được chia sẻ công khai.';
-          const postUrl = st.url || st.permalink_url || `https://www.facebook.com/${uid}/posts/${postId}`;
-          const time = st.creation_time ? st.creation_time * 1000 : Date.now();
-          const yr = new Date(time).getFullYear();
+        // A. Trích xuất toàn diện mọi link pfbid0..., /share/p/..., /posts/...
+        const extractedLinks = extractAllFacebookPostLinks(html);
+        for (const link of extractedLinks) {
+          if (seenUrls.has(link)) continue;
+          seenUrls.add(link);
 
           activities.push({
-            id: `${uid}_author_posts_${postId}`,
-            targetUid: uid,
-            type: 'author_posts',
-            year: yr,
-            timestamp: time,
-            postUrl,
-            authorName: authorName || 'Chính chủ đăng tải',
-            content: postText,
-            commentText: ''
-          });
-        }
-
-        // Regex fallback trích xuất link dạng /share/p/... hoặc /posts/...
-        const postMatches = [...html.matchAll(/(https:\/\/[www\.]*facebook\.com\/(?:share\/p\/|[^\/]+\/posts\/|permalink\.php\?story_fbid=)[\w\d_\-\.\?=\&]+)/g)];
-        const seenLinks = new Set();
-
-        for (const pm of postMatches.slice(0, 10)) {
-          const rawLink = pm[1].replace(/&amp;/g, '&');
-          if (seenLinks.has(rawLink)) continue;
-          seenLinks.add(rawLink);
-
-          activities.push({
-            id: `${uid}_author_posts_${Math.random().toString(36).slice(2, 9)}`,
+            id: `${uid}_author_${Math.random().toString(36).slice(2, 9)}`,
             targetUid: uid,
             type: 'author_posts',
             year: new Date().getFullYear(),
             timestamp: Date.now(),
-            postUrl: rawLink,
+            postUrl: link,
             authorName: authorName || 'Chính chủ đăng tải',
-            content: 'Bài viết công khai được tìm thấy trên Facebook.',
+            content: 'Bài viết công khai trên trang cá nhân hoặc dòng thời gian.',
             commentText: ''
           });
+        }
+
+        // B. Bóc tách JSON Relay stories
+        const jsonBlobs = this.extractJsonBlobs(html);
+        const stories = this.findNodesRecursively(jsonBlobs, node => {
+          return node && (node.__typename === 'Story' || node.__typename === 'CometStory' || (node.message && node.message.text));
+        });
+
+        for (const st of stories) {
+          const postText = (st.message && st.message.text) || (st.comet_sections && st.comet_sections.content && st.comet_sections.content.story && st.comet_sections.content.story.message && st.comet_sections.content.story.message.text) || '';
+          let postUrl = st.url || st.permalink_url;
+          if (postUrl) {
+            postUrl = postUrl.replace(/\\\//g, '/');
+            if (!seenUrls.has(postUrl)) {
+              seenUrls.add(postUrl);
+              const time = st.creation_time ? st.creation_time * 1000 : Date.now();
+              activities.push({
+                id: `${uid}_author_${st.id || Math.random().toString(36).slice(2, 9)}`,
+                targetUid: uid,
+                type: 'author_posts',
+                year: new Date(time).getFullYear(),
+                timestamp: time,
+                postUrl: postUrl,
+                authorName: authorName || 'Chính chủ đăng tải',
+                content: postText || 'Bài viết công khai của tài khoản.',
+                commentText: ''
+              });
+            }
+          }
         }
       }
 
-      // 2. Quét từ bộ lọc Search Posts by Author (Tìm các bài đăng trong Groups/Pages hoặc bài đã ẩn khỏi timeline grid)
-      const authorFilterSearchUrl = `https://www.facebook.com/search/posts/?q=${uid}`;
-      const searchResp = await fetch(authorFilterSearchUrl, { credentials: 'include' });
+      // 2. Quét từ bộ lọc Search Posts by Author
+      const searchUrl = `https://www.facebook.com/search/posts/?q=${uid}`;
+      const searchResp = await fetch(searchUrl, { credentials: 'include' });
       if (searchResp.ok) {
         const sHtml = await searchResp.text();
-        const sMatches = [...sHtml.matchAll(/(https:\/\/[www\.]*facebook\.com\/(?:share\/p\/|[^\/]+\/posts\/)[\w\d_\-]+)/g)];
-        for (const sm of sMatches.slice(0, 8)) {
-          const sLink = sm[1].replace(/&amp;/g, '&');
+        const sLinks = extractAllFacebookPostLinks(sHtml);
+        for (const link of sLinks) {
+          if (seenUrls.has(link)) continue;
+          seenUrls.add(link);
+
           activities.push({
-            id: `${uid}_author_posts_${Math.random().toString(36).slice(2, 9)}`,
+            id: `${uid}_author_search_${Math.random().toString(36).slice(2, 9)}`,
             targetUid: uid,
             type: 'author_posts',
             year: new Date().getFullYear(),
             timestamp: Date.now(),
-            postUrl: sLink,
+            postUrl: link,
             authorName: authorName || 'Bài viết công khai của tài khoản',
             content: 'Bài viết công khai được tìm thấy trên các nhóm hoặc trang Facebook.',
             commentText: ''
           });
         }
       }
-
     } catch (e) {
       console.warn('[FB API] Lỗi quét bài viết đã đăng:', e);
     }
-
-    // Lối tắt trực tiếp
-    activities.push({
-      id: `${uid}_author_posts_shortcut`,
-      targetUid: uid,
-      type: 'author_posts',
-      year: new Date().getFullYear(),
-      timestamp: Date.now(),
-      postUrl: `https://www.facebook.com/${uid}`,
-      authorName: 'Trang cá nhân & Lịch sử đăng bài',
-      content: '📝 Mở toàn bộ dòng thời gian và các bài đăng công khai của tài khoản.',
-      commentText: ''
-    });
 
     await this.delay(1000, 2000);
     return activities;

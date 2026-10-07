@@ -163,6 +163,29 @@ async function handleStartScan() {
     renderTargetInfo(currentProfile);
     await saveProfile(currentProfile);
 
+    // 1.1 Thử trích xuất các link pfbid0... / posts trực tiếp từ tab Facebook đang mở (nếu có)
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab && tab.id) {
+        const domResp = await chrome.tabs.sendMessage(tab.id, { action: 'EXTRACT_DOM_POSTS' }).catch(() => null);
+        if (domResp && domResp.links && domResp.links.length > 0) {
+          const domActs = domResp.links.map(link => ({
+            id: `${currentProfile.uid}_dom_${Math.random().toString(36).slice(2, 9)}`,
+            targetUid: currentProfile.uid,
+            type: 'author_posts',
+            year: new Date().getFullYear(),
+            timestamp: Date.now(),
+            postUrl: link,
+            authorName: currentProfile.name || 'Chính chủ đăng tải',
+            content: 'Bài viết công khai bóc tách trực tiếp từ giao diện tab Facebook.',
+            commentText: ''
+          }));
+          await saveActivities(domActs);
+          await refreshTreeData();
+        }
+      }
+    } catch (e) {}
+
     const allActivities = [];
 
     // 2. Quét Bài viết đã đăng (Tác giả - cả bài trên tường lẫn bài trong nhóm/bài ẩn)

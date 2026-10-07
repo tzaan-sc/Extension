@@ -28,4 +28,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     return true;
   }
+
+  if (request.action === 'EXTRACT_DOM_POSTS') {
+    try {
+      const links = new Set();
+      // Quét tất cả thẻ a trong DOM
+      const anchors = document.querySelectorAll('a[href*="/posts/"], a[href*="/share/p/"], a[href*="permalink.php"], a[href*="/photos/"], a[href*="/photo.php"]');
+      anchors.forEach(a => {
+        const href = a.href;
+        if (href && (href.includes('pfbid0') || href.includes('/share/p/') || href.includes('/posts/'))) {
+          // Lọc bỏ query tracking fbclid
+          const cleanUrl = href.split('?')[0].split('&')[0];
+          links.add(cleanUrl);
+        }
+      });
+
+      sendResponse({
+        success: true,
+        links: Array.from(links)
+      });
+    } catch (err) {
+      sendResponse({ success: false, error: err.message });
+    }
+    return true;
+  }
 });

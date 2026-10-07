@@ -13,8 +13,43 @@ export function buildFacebookPostUrl(idString) {
 }
 
 /**
- * Chuẩn hóa các object trả về từ Graph API / GraphQL (id, message, created_time, from, cursor)
+ * Trích xuất toàn bộ liên kết bài viết Facebook (bao gồm định dạng pfbid0..., /share/p/..., /posts/...)
  */
+export function extractAllFacebookPostLinks(rawText) {
+  if (!rawText) return [];
+  // 1. Unescape JSON slashes (\/ -> /)
+  const text = rawText.replace(/\\\//g, '/');
+  const links = new Set();
+
+  // Pattern A: https://www.facebook.com/{username}/posts/pfbid0... (hoặc relative /username/posts/pfbid0...)
+  const pfbidRegex = /(?:https?:\/\/(?:www\.)?facebook\.com)?\/([a-zA-Z0-9\._\-]+)\/posts\/(pfbid0[a-zA-Z0-9]+)/gi;
+  let m;
+  while ((m = pfbidRegex.exec(text)) !== null) {
+    const username = m[1];
+    const pfbid = m[2];
+    links.add(`https://www.facebook.com/${username}/posts/${pfbid}`);
+  }
+
+  // Pattern B: /share/p/{id}/
+  const shareRegex = /(?:https?:\/\/(?:www\.)?facebook\.com)?\/share\/p\/([a-zA-Z0-9]+)/gi;
+  while ((m = shareRegex.exec(text)) !== null) {
+    links.add(`https://www.facebook.com/share/p/${m[1]}/`);
+  }
+
+  // Pattern C: permalink.php?story_fbid=...&id=...
+  const permalinkRegex = /(?:https?:\/\/(?:www\.)?facebook\.com)?\/permalink\.php\?story_fbid=([a-zA-Z0-9_]+)&(?:amp;)?id=(\d+)/gi;
+  while ((m = permalinkRegex.exec(text)) !== null) {
+    links.add(`https://www.facebook.com/permalink.php?story_fbid=${m[1]}&id=${m[2]}`);
+  }
+
+  // Pattern D: /{username}/posts/{numeric_id}
+  const numPostRegex = /(?:https?:\/\/(?:www\.)?facebook\.com)?\/([a-zA-Z0-9\._\-]+)\/posts\/(\d{8,25})/gi;
+  while ((m = numPostRegex.exec(text)) !== null) {
+    links.add(`https://www.facebook.com/${m[1]}/posts/${m[2]}`);
+  }
+
+  return Array.from(links);
+}
 export function parseGraphApiItem(item, defaultType = 'comments', targetUid = '') {
   const time = item.created_time ? new Date(item.created_time).getTime() : Date.now();
   const year = new Date(time).getFullYear();
