@@ -16,7 +16,8 @@
     "scripting"
   ],
   "host_permissions": [
-    "*://*.youtube.com/*"
+    "*://*.youtube.com/*",
+    "https://*.googlevideo.com/*"
   ],
   "background": {
     "service_worker": "background/background.js"

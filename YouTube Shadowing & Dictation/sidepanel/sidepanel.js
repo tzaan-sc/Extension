@@ -188,23 +188,41 @@
     const track = tracks[selectedIdx];
     updateStatus(true, 'Đang tải phụ đề...');
 
-    // 1. Try fetching via content script
+    // 1. Try fetching via content script / in-page context
     let res = await sendMessageToContent({
       type: 'FETCH_SUBTITLES',
       baseUrl: track.baseUrl
     });
 
-    // 2. Direct fetch fallback from SidePanel context if content script failed
+    const base = track.baseUrl.startsWith('//') ? `https:${track.baseUrl}` : track.baseUrl;
+    const urlsToTry = [
+      base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
+      base,
+      base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
+      base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`
+    ];
+
+    // 2. Background proxy fallback (bypasses all CORS and redirect constraints)
     if (!res || !res.success || !res.segments || res.segments.length === 0) {
       try {
-        const base = track.baseUrl.startsWith('//') ? `https:${track.baseUrl}` : track.baseUrl;
-        const urlsToTry = [
-          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
-          base,
-          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
-          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`
-        ];
+        const bgRes = await chrome.runtime.sendMessage({
+          type: 'FETCH_URL_BACKGROUND',
+          urls: urlsToTry
+        });
+        if (bgRes && bgRes.success && bgRes.text) {
+          const parsed = SubtitleParser.parse(bgRes.text);
+          if (parsed && parsed.length > 0) {
+            res = { success: true, segments: parsed };
+          }
+        }
+      } catch (bgErr) {
+        console.warn('[YT-Dictation] Background proxy fetch failed:', bgErr);
+      }
+    }
 
+    // 3. Direct fetch fallback from SidePanel context
+    if (!res || !res.success || !res.segments || res.segments.length === 0) {
+      try {
         for (const u of urlsToTry) {
           try {
             const fetchRes = await fetch(u);

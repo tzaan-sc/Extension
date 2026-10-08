@@ -1,23 +1,30 @@
 /**
  * Universal YouTube Subtitle Parser
- * Handles JSON3, XML (<p t="" d="">), XML (<text start="" dur="">), and WebVTT
+ * Supports JSON3, YouTube ASR/srv3 XML (<p t="" d="">), legacy XML (<text start="" dur="">), and WebVTT
  */
 
 const SubtitleParser = {
-  // Decode HTML entities
+  // Decode HTML entities safely
   decodeHtml(html) {
-    const txt = document.createElement('textarea');
-    txt.innerHTML = html;
-    return txt.value;
+    if (!html) return '';
+    return html
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/&#x2F;/g, '/')
+      .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
   },
 
   // Clean and normalize subtitle text
   cleanText(text) {
     if (!text) return '';
     return this.decodeHtml(text)
-      .replace(/<[^>]*>/g, '') // remove any residual tags
+      .replace(/<[^>]*>/g, '') // strip nested tags like <s>
       .replace(/[\n\r]+/g, ' ') // replace newlines with space
-      .replace(/\s+/g, ' ') // collapse multiple spaces
+      .replace(/\s+/g, ' ') // collapse spaces
       .trim();
   },
 
@@ -30,9 +37,7 @@ const SubtitleParser = {
       const segments = [];
       data.events.forEach((ev) => {
         if (!ev.segs || !Array.isArray(ev.segs)) return;
-        const text = ev.segs
-          .map(s => s.utf8 || '')
-          .join('');
+        const text = ev.segs.map(s => s.utf8 || '').join('');
         const cleaned = this.cleanText(text);
         if (!cleaned || cleaned === '\n') return;
 
@@ -53,84 +58,62 @@ const SubtitleParser = {
     }
   },
 
-  // Parse HTML/XML DOM format (<p t="" d=""> or <text start="" dur="">)
-  parseDom(raw) {
+  // Parse Regex for <p t="..." d="..."> (YouTube ASR Auto-generated & srv3)
+  parseSrv3Xml(raw) {
     try {
-      // Use text/html to avoid XML parsererror on HTML entities
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(raw, 'text/html');
-
-      // 1. Check <p t="1234" d="5678">
-      const pNodes = doc.querySelectorAll('p[t]');
-      if (pNodes.length > 0) {
-        const segments = [];
-        pNodes.forEach((node) => {
-          const t = parseFloat(node.getAttribute('t') || '0');
-          const d = parseFloat(node.getAttribute('d') || '0');
-          const start = t / 1000;
-          const dur = d / 1000;
-          const text = this.cleanText(node.textContent);
-
-          if (text) {
-            segments.push({
-              id: segments.length,
-              start: parseFloat(start.toFixed(2)),
-              end: parseFloat((start + dur).toFixed(2)),
-              duration: parseFloat(dur.toFixed(2)),
-              text: text
-            });
-          }
-        });
-        if (segments.length > 0) return segments;
+      const pRegex = /<p\s+([^>]+)>([\s\S]*?)<\/p>/gi;
+      const segments = [];
+      let pMatch;
+      while ((pMatch = pRegex.exec(raw)) !== null) {
+        const attrs = pMatch[1];
+        const inner = pMatch[2];
+        const tMatch = attrs.match(/t=["']?(\d+)["']?/);
+        const dMatch = attrs.match(/d=["']?(\d+)["']?/);
+        const t = tMatch ? parseInt(tMatch[1], 10) : 0;
+        const d = dMatch ? parseInt(dMatch[1], 10) : 0;
+        const text = this.cleanText(inner);
+        if (text) {
+          segments.push({
+            id: segments.length,
+            start: parseFloat((t / 1000).toFixed(2)),
+            end: parseFloat(((t + d) / 1000).toFixed(2)),
+            duration: parseFloat((d / 1000).toFixed(2)),
+            text: text
+          });
+        }
       }
-
-      // 2. Check <text start="1.23" dur="4.56">
-      const textNodes = doc.querySelectorAll('text[start]');
-      if (textNodes.length > 0) {
-        const segments = [];
-        textNodes.forEach((node) => {
-          const start = parseFloat(node.getAttribute('start') || '0');
-          const dur = parseFloat(node.getAttribute('dur') || '0');
-          const text = this.cleanText(node.textContent);
-
-          if (text) {
-            segments.push({
-              id: segments.length,
-              start: parseFloat(start.toFixed(2)),
-              end: parseFloat((start + dur).toFixed(2)),
-              duration: parseFloat(dur.toFixed(2)),
-              text: text
-            });
-          }
-        });
-        if (segments.length > 0) return segments;
-      }
-
-      // 3. Fallback: all <p> or <text> elements
-      const anyNodes = doc.querySelectorAll('p, text');
-      if (anyNodes.length > 0) {
-        const segments = [];
-        anyNodes.forEach((node) => {
-          const start = parseFloat(node.getAttribute('start') || (node.getAttribute('t') ? parseFloat(node.getAttribute('t')) / 1000 : 0));
-          const dur = parseFloat(node.getAttribute('dur') || (node.getAttribute('d') ? parseFloat(node.getAttribute('d')) / 1000 : 0));
-          const text = this.cleanText(node.textContent);
-
-          if (text) {
-            segments.push({
-              id: segments.length,
-              start: parseFloat(start.toFixed(2)),
-              end: parseFloat((start + dur).toFixed(2)),
-              duration: parseFloat(dur.toFixed(2)),
-              text: text
-            });
-          }
-        });
-        if (segments.length > 0) return segments;
-      }
-
-      return null;
+      return segments.length > 0 ? segments : null;
     } catch (e) {
-      console.warn('[SubtitleParser] DOM parse error:', e);
+      return null;
+    }
+  },
+
+  // Parse Regex for <text start="..." dur="..."> (Legacy XML)
+  parseLegacyXml(raw) {
+    try {
+      const textRegex = /<text\s+([^>]+)>([\s\S]*?)<\/text>/gi;
+      const segments = [];
+      let tMatch;
+      while ((tMatch = textRegex.exec(raw)) !== null) {
+        const attrs = tMatch[1];
+        const inner = tMatch[2];
+        const startMatch = attrs.match(/start=["']?([\d.]+)["']?/);
+        const durMatch = attrs.match(/dur=["']?([\d.]+)["']?/);
+        const start = startMatch ? parseFloat(startMatch[1]) : 0;
+        const dur = durMatch ? parseFloat(durMatch[1]) : 0;
+        const text = this.cleanText(inner);
+        if (text) {
+          segments.push({
+            id: segments.length,
+            start: parseFloat(start.toFixed(2)),
+            end: parseFloat((start + dur).toFixed(2)),
+            duration: parseFloat(dur.toFixed(2)),
+            text: text
+          });
+        }
+      }
+      return segments.length > 0 ? segments : null;
+    } catch (e) {
       return null;
     }
   },
@@ -208,11 +191,15 @@ const SubtitleParser = {
     const jsonResult = this.parseJson3(raw);
     if (jsonResult && jsonResult.length > 0) return jsonResult;
 
-    // 2. Try DOM (HTML/XML)
-    const domResult = this.parseDom(raw);
-    if (domResult && domResult.length > 0) return domResult;
+    // 2. Try srv3 XML (<p t="" d="">)
+    const srv3Result = this.parseSrv3Xml(raw);
+    if (srv3Result && srv3Result.length > 0) return srv3Result;
 
-    // 3. Try VTT
+    // 3. Try legacy XML (<text start="" dur="">)
+    const legacyResult = this.parseLegacyXml(raw);
+    if (legacyResult && legacyResult.length > 0) return legacyResult;
+
+    // 4. Try VTT
     const vttResult = this.parseVtt(raw);
     if (vttResult && vttResult.length > 0) return vttResult;
 
