@@ -58,21 +58,40 @@
     };
   }
 
-  // Fetch Innertube get_transcript
+  // 1. Fetch Innertube get_transcript
   async function fetchInnertubeTranscript() {
     try {
       const apiKey = window.ytcfg?.get('INNERTUBE_API_KEY');
-      const context = window.ytcfg?.get('INNERTUBE_CONTEXT');
-      
-      // Look for getTranscriptEndpoint in ytInitialData or DOM
+      const context = window.ytcfg?.get('INNERTUBE_CONTEXT') || {
+        client: {
+          clientName: 'WEB',
+          clientVersion: window.ytcfg?.get('INNERTUBE_CLIENT_VERSION') || '2.20240401.01.00',
+          hl: 'en'
+        }
+      };
+
+      // Search for getTranscriptEndpoint in watchFlexy or ytInitialData
       let params = null;
-      if (window.ytInitialData) {
-        const str = JSON.stringify(window.ytInitialData);
+      const watchFlexy = document.querySelector('ytd-watch-flexy');
+      const dataSource = [
+        watchFlexy?.response,
+        watchFlexy?.playerData,
+        window.ytInitialData,
+        window.ytInitialPlayerResponse
+      ];
+
+      for (const data of dataSource) {
+        if (!data) continue;
+        const str = JSON.stringify(data);
         const match = str.match(/"getTranscriptEndpoint":\{"params":"([^"]+)"/);
-        if (match) params = match[1];
+        if (match) {
+          params = match[1];
+          break;
+        }
       }
 
-      if (apiKey && context && params) {
+      if (apiKey && params) {
+        console.log('[YT-Dictation INJECTED] Calling get_transcript with params...');
         const res = await window.fetch(`https://www.youtube.com/youtubei/v1/get_transcript?key=${apiKey}`, {
           method: 'POST',
           headers: {
@@ -105,12 +124,73 @@
                 });
               }
             });
-            if (segments.length > 0) return segments;
+            if (segments.length > 0) {
+              console.log('[YT-Dictation INJECTED] Loaded', segments.length, 'segments via get_transcript!');
+              return segments;
+            }
           }
         }
       }
     } catch (e) {
       console.warn('[YT-Dictation] Innertube transcript attempt failed:', e);
+    }
+    return null;
+  }
+
+  // 2. Fetch DOM transcript by clicking button
+  async function fetchDomTranscript() {
+    try {
+      let nodes = document.querySelectorAll('ytd-transcript-segment-renderer');
+      if (nodes.length === 0) {
+        // Expand description
+        const expandBtn = document.querySelector('#expand, ytd-text-inline-expander #expand, #description-inline-expander');
+        if (expandBtn) expandBtn.click();
+
+        // Click transcript button
+        const showBtn = document.querySelector('ytd-video-description-transcript-section-renderer button, button[aria-label="Show transcript"], button[aria-label="Hiện bản ghi lời thoại"], button[aria-label*="transcript" i], button[aria-label*="bản ghi" i]');
+        if (showBtn) {
+          console.log('[YT-Dictation INJECTED] Clicking Show Transcript button...');
+          showBtn.click();
+          for (let i = 0; i < 15; i++) {
+            await new Promise(r => setTimeout(r, 200));
+            nodes = document.querySelectorAll('ytd-transcript-segment-renderer');
+            if (nodes.length > 0) break;
+          }
+        }
+      }
+
+      if (nodes.length > 0) {
+        const segments = [];
+        nodes.forEach((node, idx) => {
+          const timeText = node.querySelector('.segment-timestamp, .formatted-timestamp')?.textContent?.trim() || '0:00';
+          const text = node.querySelector('.segment-text, yt-formatted-string.segment-text')?.textContent?.trim() || '';
+
+          const parts = timeText.split(':').map(p => parseInt(p, 10));
+          let start = 0;
+          if (parts.length === 3) start = parts[0] * 3600 + parts[1] * 60 + parts[2];
+          else if (parts.length === 2) start = parts[0] * 60 + parts[1];
+
+          if (text) {
+            segments.push({
+              id: idx,
+              start: start,
+              end: start + 3,
+              duration: 3,
+              text: text
+            });
+          }
+        });
+        for (let i = 0; i < segments.length - 1; i++) {
+          segments[i].end = segments[i + 1].start;
+          segments[i].duration = parseFloat((segments[i].end - segments[i].start).toFixed(2));
+        }
+        if (segments.length > 0) {
+          console.log('[YT-Dictation INJECTED] Loaded', segments.length, 'segments from DOM!');
+          return segments;
+        }
+      }
+    } catch (e) {
+      console.warn('[YT-Dictation INJECTED] DOM transcript failed:', e);
     }
     return null;
   }
@@ -134,7 +214,7 @@
       const requestId = event.data.requestId;
       const baseUrl = event.data.baseUrl;
 
-      // 1. Try Innertube get_transcript first
+      // 1. Try Innertube get_transcript
       const innertubeSegments = await fetchInnertubeTranscript();
       if (innertubeSegments && innertubeSegments.length > 0) {
         window.postMessage({
@@ -147,38 +227,63 @@
         return;
       }
 
-      // 2. Try URL variations
-      const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
-      const urls = [
-        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
-        base,
-        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
-        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`,
-        base.replace('&variant=gemini', '') + '&fmt=json3',
-        base.replace('&variant=gemini', '') + '&fmt=srv3',
-        base.replace('&variant=gemini', '')
-      ];
+      // 2. Try DOM Transcript Trigger
+      const domSegments = await fetchDomTranscript();
+      if (domSegments && domSegments.length > 0) {
+        window.postMessage({
+          source: 'yt-dictation-page',
+          type: 'FETCH_SUBTITLES_IN_PAGE_RESPONSE',
+          requestId: requestId,
+          success: true,
+          segments: domSegments
+        }, '*');
+        return;
+      }
 
-      let rawText = null;
-      for (const u of urls) {
-        try {
-          const res = await window.fetch(u);
-          if (res.ok) {
-            const txt = await res.text();
-            if (txt && txt.trim().length > 0) {
-              rawText = txt;
-              break;
+      // 3. Try URL variations
+      if (baseUrl) {
+        const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
+        const urls = [
+          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
+          base,
+          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
+          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`,
+          base.replace('&variant=gemini', '') + '&fmt=json3',
+          base.replace('&variant=gemini', '') + '&fmt=srv3',
+          base.replace('&variant=gemini', '')
+        ];
+
+        let rawText = null;
+        for (const u of urls) {
+          try {
+            const res = await window.fetch(u);
+            if (res.ok) {
+              const txt = await res.text();
+              if (txt && txt.trim().length > 0) {
+                rawText = txt;
+                break;
+              }
             }
-          }
-        } catch (e) {}
+          } catch (e) {}
+        }
+
+        if (rawText) {
+          window.postMessage({
+            source: 'yt-dictation-page',
+            type: 'FETCH_SUBTITLES_IN_PAGE_RESPONSE',
+            requestId: requestId,
+            success: true,
+            rawText: rawText
+          }, '*');
+          return;
+        }
       }
 
       window.postMessage({
         source: 'yt-dictation-page',
         type: 'FETCH_SUBTITLES_IN_PAGE_RESPONSE',
         requestId: requestId,
-        success: !!rawText,
-        rawText: rawText
+        success: false
       }, '*');
     }
   });
@@ -196,7 +301,6 @@
     }, 600);
   });
 
-  // Initial broadcast after load
   setTimeout(() => {
     const info = getVideoInfo();
     if (info.tracks && info.tracks.length > 0) {
