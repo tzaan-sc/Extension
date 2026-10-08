@@ -167,6 +167,13 @@
           segments[i].end = segments[i + 1].start;
           segments[i].duration = parseFloat((segments[i].end - segments[i].start).toFixed(2));
         }
+
+        // Automatically close the transcript panel on YouTube page so it stays clean
+        try {
+          const closeBtn = document.querySelector('ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] #visibility-button button, ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] yt-icon-button button, ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] button[aria-label*="Close" i], ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"] button[aria-label*="Đóng" i]');
+          if (closeBtn) closeBtn.click();
+        } catch (e) {}
+
         if (segments.length > 0) {
           console.log('[YT-Dictation CS] Successfully extracted', segments.length, 'segments from DOM!');
           return segments;
