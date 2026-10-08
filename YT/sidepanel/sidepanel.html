@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Shadowing & Dictation</title>
+  <link rel="stylesheet" href="sidepanel.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="22"/>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <h1>Shadow & Dictate</h1>
+          <span class="brand-sub">Luyện nghe & chép chính tả</span>
+        </div>
+      </div>
+      <div class="status-pill" id="connectionStatus">
+        <span class="status-dot"></span>
+        <span class="status-text">Đang kết nối...</span>
+      </div>
+    </header>
+
+    <!-- Video & Subtitle Controls -->
+    <section class="video-info-card" id="videoCard">
+      <div class="video-meta">
+        <div class="video-title-wrap">
+          <span class="video-badge">YouTube</span>
+          <h2 class="video-title" id="videoTitle">Chưa mở video YouTube nào</h2>
+        </div>
+      </div>
+
+      <div class="track-selector-row">
+        <label for="trackSelect" class="label-inline">Phụ đề:</label>
+        <select id="trackSelect" class="styled-select" disabled>
+          <option value="">Đang tải phụ đề...</option>
+        </select>
+        <button id="btnReloadVideo" class="icon-btn" title="Tải lại dữ liệu video">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+            <path d="M21 3v5h-5"/>
+            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+            <path d="M8 16H3v5"/>
+          </svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- Practice Mode Tabs -->
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="dictate">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 20h9"/>
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+        </svg>
+        Chép chính tả
+      </button>
+      <button class="tab-btn" data-tab="transcript">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="8" y1="6" x2="21" y2="6"/>
+          <line x1="8" y1="12" x2="21" y2="12"/>
+          <line x1="8" y1="18" x2="21" y2="18"/>
+          <line x1="3" y1="6" x2="3.01" y2="6"/>
+          <line x1="3" y1="12" x2="3.01" y2="12"/>
+          <line x1="3" y1="18" x2="3.01" y2="18"/>
+        </svg>
+        Toàn bộ phụ đề (<span id="totalSegmentsCount">0</span>)
+      </button>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Dictation Tab Pane -->
+      <div class="tab-pane active" id="paneDictate">
+        
+        <!-- Current Sentence Header & Progress -->
+        <div class="sentence-card">
+          <div class="sentence-header">
+            <div class="sentence-counter">
+              <span class="counter-highlight" id="currentSentenceNum">0</span> / <span id="totalSentenceNum">0</span>
+            </div>
+            <div class="time-range-badge" id="sentenceTimeRange">
+              00:00 - 00:00
+            </div>
+          </div>
+
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="dictateProgressBar" style="width: 0%;"></div>
+          </div>
+
+          <!-- Video Playback Mini Controls -->
+          <div class="playback-controls">
+            <button id="btnPrevSentence" class="control-btn" title="Câu trước (Alt + Mũi tên trái)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="19 20 9 12 19 4 19 20"/>
+                <line x1="5" y1="19" x2="5" y2="5"/>
+              </svg>
+            </button>
+
+            <button id="btnReplaySentence" class="control-btn primary-btn" title="Phát lại câu này (Ctrl + Space hoặc Tab)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              <span>Phát câu này</span>
+            </button>
+
+            <button id="btnNextSentence" class="control-btn" title="Câu kế tiếp (Alt + Mũi tên phải)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 4 15 12 5 20 5 4"/>
+                <line x1="19" y1="5" x2="19" y2="19"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Quick Settings Row (Speed, Auto-pause, Loop) -->
+          <div class="settings-strip">
+            <div class="speed-group">
+              <span class="setting-label">Tốc độ:</span>
+              <button class="speed-chip" data-speed="0.75">0.75x</button>
+              <button class="speed-chip" data-speed="0.9">0.9x</button>
+              <button class="speed-chip active" data-speed="1.0">1.0x</button>
+            </div>
+
+            <div class="toggle-group">
+              <label class="switch-label" title="Tự động dừng khi hết câu để gõ">
+                <input type="checkbox" id="toggleAutoPause" checked>
+                <span class="switch-slider"></span>
+                <span>Auto-pause</span>
+              </label>
+
+              <label class="switch-label" title="Tự động lặp lại câu này">
+                <input type="checkbox" id="toggleLoop">
+                <span class="switch-slider"></span>
+                <span>Lặp câu</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hint or Masked Display -->
+        <div class="hint-container" id="hintContainer" style="display: none;">
+          <div class="hint-header">
+            <span>💡 Gợi ý:</span>
+            <button class="btn-close-hint" id="btnCloseHint">&times;</button>
+          </div>
+          <div class="hint-content" id="hintText"></div>
+        </div>
+
+        <!-- Dictation Input Box -->
+        <div class="input-card">
+          <div class="input-header">
+            <label for="dictationInput" class="input-label">Gõ lại những gì bạn nghe:</label>
+            <span class="shortcut-tip">Enter để kiểm tra</span>
+          </div>
+
+          <textarea 
+            id="dictationInput" 
+            class="dictation-textarea" 
+            rows="3" 
+            placeholder="Lắng nghe audio và gõ chính tả vào đây..."
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+          ></textarea>
+
+          <!-- Action Buttons -->
+          <div class="input-actions">
+            <div class="actions-left">
+              <button id="btnHint" class="action-btn secondary" title="Xem gợi ý ký tự đầu (H)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 18h6"/>
+                  <path d="M10 22h4"/>
+                  <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/>
+                </svg>
+                Gợi ý
+              </button>
+
+              <button id="btnReveal" class="action-btn secondary" title="Xem toàn bộ câu gốc (R)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                Xem đáp án
+              </button>
+            </div>
+
+            <div class="actions-right">
+              <button id="btnCheck" class="action-btn primary" title="Kiểm tra đáp án (Enter)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                Kiểm tra
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Result / Diff Box -->
+        <div class="result-card" id="resultCard" style="display: none;">
+          <div class="result-header">
+            <div class="result-score-badge" id="scoreBadge">
+              <span class="score-icon" id="scoreIcon">🎯</span>
+              <span class="score-percent" id="scorePercent">100%</span>
+              <span class="score-desc" id="scoreDesc">Chính xác!</span>
+            </div>
+            <button id="btnNextAfterCheck" class="btn-next-action">
+              Câu tiếp theo &rarr;
+            </button>
+          </div>
+
+          <div class="diff-comparison">
+            <div class="diff-block">
+              <div class="diff-title">Câu gốc:</div>
+              <div class="diff-text orig-text" id="diffOriginalText"></div>
+            </div>
+
+            <div class="diff-block">
+              <div class="diff-title">Kết quả so khớp của bạn:</div>
+              <div class="diff-text user-diff" id="diffUserText"></div>
+            </div>
+          </div>
+
+          <div class="diff-legend">
+            <span class="legend-item correct"><span class="legend-dot"></span> Đúng</span>
+            <span class="legend-item missing"><span class="legend-dot"></span> Bị thiếu</span>
+            <span class="legend-item extra"><span class="legend-dot"></span> Thừa / Sai</span>
+          </div>
+        </div>
+
+        <!-- Quick Hotkey Bar -->
+        <div class="hotkey-footer">
+          <span class="hotkey-item"><kbd>Tab</kbd> / <kbd>Ctrl+Space</kbd> Nghe lại</span>
+          <span class="hotkey-item"><kbd>Enter</kbd> Kiểm tra</span>
+          <span class="hotkey-item"><kbd>Alt+&rarr;</kbd> Tiếp theo</span>
+        </div>
+
+      </div>
+
+      <!-- Transcript List Tab Pane -->
+      <div class="tab-pane" id="paneTranscript">
+        <div class="transcript-search-box">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="transcriptSearchInput" placeholder="Tìm kiếm từ hoặc câu trong phụ đề...">
+        </div>
+
+        <div class="transcript-list" id="transcriptList">
+          <!-- Populated by JS -->
+          <div class="empty-state">Chưa có phụ đề nào được tải. Hãy chọn một video YouTube và chọn phụ đề ở trên.</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="../utils/diff.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
