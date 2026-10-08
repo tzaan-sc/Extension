@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Shadowing & Dictation",
+  "name": "Shadowing & Dictation",
   "version": "1.0.0",
   "description": "Luyện nghe, chép chính tả và shadowing trên YouTube với SidePanel thông minh",
   "icons": {
