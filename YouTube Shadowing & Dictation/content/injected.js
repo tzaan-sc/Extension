@@ -1,4 +1,4 @@
-// Injected into YouTube page context to access ytInitialPlayerResponse & yt player
+// Injected into YouTube page context to access ytInitialPlayerResponse, ytcfg, and Innertube
 (function () {
   function getPlayerResponse() {
     try {
@@ -58,6 +58,63 @@
     };
   }
 
+  // Fetch Innertube get_transcript
+  async function fetchInnertubeTranscript() {
+    try {
+      const apiKey = window.ytcfg?.get('INNERTUBE_API_KEY');
+      const context = window.ytcfg?.get('INNERTUBE_CONTEXT');
+      
+      // Look for getTranscriptEndpoint in ytInitialData or DOM
+      let params = null;
+      if (window.ytInitialData) {
+        const str = JSON.stringify(window.ytInitialData);
+        const match = str.match(/"getTranscriptEndpoint":\{"params":"([^"]+)"/);
+        if (match) params = match[1];
+      }
+
+      if (apiKey && context && params) {
+        const res = await window.fetch(`https://www.youtube.com/youtubei/v1/get_transcript?key=${apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            context: context,
+            params: params
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const initialSegments = data?.actions?.[0]?.updateEngagementPanelAction?.content?.transcriptRenderer?.content?.transcriptSearchPanelRenderer?.body?.transcriptSegmentListRenderer?.initialSegments;
+          if (initialSegments && Array.isArray(initialSegments)) {
+            const segments = [];
+            initialSegments.forEach((item) => {
+              const seg = item.transcriptSegmentRenderer;
+              if (!seg) return;
+              const text = seg.snippet?.runs?.map(r => r.text || '').join('').trim();
+              const startMs = parseInt(seg.startMs || '0', 10);
+              const endMs = parseInt(seg.endMs || '0', 10);
+              if (text) {
+                segments.push({
+                  id: segments.length,
+                  start: parseFloat((startMs / 1000).toFixed(2)),
+                  end: parseFloat((endMs / 1000).toFixed(2)),
+                  duration: parseFloat(((endMs - startMs) / 1000).toFixed(2)),
+                  text: text
+                });
+              }
+            });
+            if (segments.length > 0) return segments;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[YT-Dictation] Innertube transcript attempt failed:', e);
+    }
+    return null;
+  }
+
   window.addEventListener('message', async (event) => {
     if (event.source !== window || !event.data || event.data.source !== 'yt-dictation-cs') {
       return;
@@ -76,19 +133,36 @@
     if (event.data.type === 'FETCH_SUBTITLES_IN_PAGE') {
       const requestId = event.data.requestId;
       const baseUrl = event.data.baseUrl;
-      const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
 
+      // 1. Try Innertube get_transcript first
+      const innertubeSegments = await fetchInnertubeTranscript();
+      if (innertubeSegments && innertubeSegments.length > 0) {
+        window.postMessage({
+          source: 'yt-dictation-page',
+          type: 'FETCH_SUBTITLES_IN_PAGE_RESPONSE',
+          requestId: requestId,
+          success: true,
+          segments: innertubeSegments
+        }, '*');
+        return;
+      }
+
+      // 2. Try URL variations
+      const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
       const urls = [
         base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
         base,
         base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
-        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`
+        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`,
+        base.replace('&variant=gemini', '') + '&fmt=json3',
+        base.replace('&variant=gemini', '') + '&fmt=srv3',
+        base.replace('&variant=gemini', '')
       ];
 
       let rawText = null;
       for (const u of urls) {
         try {
-          const res = await window.fetch(u, { credentials: 'include' });
+          const res = await window.fetch(u);
           if (res.ok) {
             const txt = await res.text();
             if (txt && txt.trim().length > 0) {
@@ -96,9 +170,7 @@
               break;
             }
           }
-        } catch (e) {
-          console.warn('[YT-Dictation] In-page fetch trial failed for:', u, e);
-        }
+        } catch (e) {}
       }
 
       window.postMessage({

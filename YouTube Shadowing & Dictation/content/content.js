@@ -29,9 +29,15 @@
       const resolver = pendingSubtitleResolvers[event.data.requestId];
       if (resolver) {
         delete pendingSubtitleResolvers[event.data.requestId];
-        if (event.data.success && event.data.rawText) {
-          const segs = SubtitleParser.parse(event.data.rawText);
-          resolver(segs);
+        if (event.data.success) {
+          if (event.data.segments && Array.isArray(event.data.segments)) {
+            resolver(event.data.segments);
+          } else if (event.data.rawText) {
+            const segs = SubtitleParser.parse(event.data.rawText);
+            resolver(segs);
+          } else {
+            resolver(null);
+          }
         } else {
           resolver(null);
         }
@@ -43,7 +49,6 @@
       cachedTracks = event.data.tracks || [];
       currentVideoDetails = event.data.videoDetails || {};
 
-      // Resolve pending GET_VIDEO_DATA requests
       while (pendingDataResolvers.length > 0) {
         const resolve = pendingDataResolvers.shift();
         resolve({
@@ -104,19 +109,87 @@
 
   setInterval(setupVideoListeners, 1000);
 
+  // Helper to extract transcript from DOM if available
+  function extractFromDomTranscript() {
+    try {
+      const segmentNodes = document.querySelectorAll('ytd-transcript-segment-renderer');
+      if (segmentNodes && segmentNodes.length > 0) {
+        const segments = [];
+        segmentNodes.forEach((node, idx) => {
+          const timeText = node.querySelector('.segment-timestamp, .formatted-timestamp')?.textContent?.trim() || '0:00';
+          const text = node.querySelector('.segment-text, yt-formatted-string.segment-text')?.textContent?.trim() || '';
+
+          // Parse 0:00 or 1:23:45 to seconds
+          const parts = timeText.split(':').map(p => parseInt(p, 10));
+          let start = 0;
+          if (parts.length === 3) start = parts[0] * 3600 + parts[1] * 60 + parts[2];
+          else if (parts.length === 2) start = parts[0] * 60 + parts[1];
+
+          if (text) {
+            segments.push({
+              id: idx,
+              start: start,
+              end: start + 3, // approximate
+              duration: 3,
+              text: text
+            });
+          }
+        });
+        // Adjust end times based on next segment start
+        for (let i = 0; i < segments.length - 1; i++) {
+          segments[i].end = segments[i + 1].start;
+          segments[i].duration = parseFloat((segments[i].end - segments[i].start).toFixed(2));
+        }
+        if (segments.length > 0) return segments;
+      }
+    } catch (e) {
+      console.warn('[YT-Dictation] DOM transcript extraction failed:', e);
+    }
+    return null;
+  }
+
+  // Helper to extract from video.textTracks cues
+  function extractFromTextTracks() {
+    try {
+      const video = getVideoElement();
+      if (video && video.textTracks) {
+        for (let i = 0; i < video.textTracks.length; i++) {
+          const track = video.textTracks[i];
+          if (track.cues && track.cues.length > 0) {
+            const segments = [];
+            for (let j = 0; j < track.cues.length; j++) {
+              const cue = track.cues[j];
+              const text = SubtitleParser.cleanText(cue.text);
+              if (text) {
+                segments.push({
+                  id: j,
+                  start: parseFloat(cue.startTime.toFixed(2)),
+                  end: parseFloat(cue.endTime.toFixed(2)),
+                  duration: parseFloat((cue.endTime - cue.startTime).toFixed(2)),
+                  text: text
+                });
+              }
+            }
+            if (segments.length > 0) return segments;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[YT-Dictation] TextTracks extraction failed:', e);
+    }
+    return null;
+  }
+
   // Fetch subtitles helper with in-page context and format fallbacks
   async function fetchSubtitleSegments(baseUrl) {
-    if (!baseUrl) return [];
-    const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
-
-    // 1. First priority: In-page fetch (running in YouTube's main context with full cookies & session)
+    // 1. First priority: In-page fetch (Innertube + in-page URLs)
     try {
       const requestId = 'req_' + Math.random().toString(36).substring(2, 9);
       const inPageResult = await new Promise((resolve) => {
         const timer = setTimeout(() => {
           delete pendingSubtitleResolvers[requestId];
           resolve(null);
-        }, 2000);
+        }, 2500);
 
         pendingSubtitleResolvers[requestId] = (result) => {
           clearTimeout(timer);
@@ -127,7 +200,7 @@
           source: 'yt-dictation-cs',
           type: 'FETCH_SUBTITLES_IN_PAGE',
           requestId: requestId,
-          baseUrl: base
+          baseUrl: baseUrl || ''
         }, '*');
       });
 
@@ -138,10 +211,25 @@
       console.warn('[YT-Dictation] In-page fetch error:', e);
     }
 
-    // Helper fetch with credentials
+    // 2. Second priority: Check DOM transcript elements
+    const domSegments = extractFromDomTranscript();
+    if (domSegments && domSegments.length > 0) {
+      return domSegments;
+    }
+
+    // 3. Third priority: Check HTML5 video textTracks
+    const trackSegments = extractFromTextTracks();
+    if (trackSegments && trackSegments.length > 0) {
+      return trackSegments;
+    }
+
+    if (!baseUrl) return [];
+    const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
+
+    // Helper fetch
     async function safeFetch(url) {
       try {
-        const res = await fetch(url, { credentials: 'include' });
+        const res = await fetch(url);
         if (!res.ok) return null;
         return await res.text();
       } catch (e) {
@@ -149,44 +237,23 @@
       }
     }
 
-    // 2. Direct fetch fallback: Try URL + &fmt=json3
-    try {
-      const jsonUrl = base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`;
-      const text = await safeFetch(jsonUrl);
-      if (text) {
-        const segs = SubtitleParser.parse(text);
-        if (segs && segs.length > 0) return segs;
-      }
-    } catch (e) {}
+    const urlsToTry = [
+      base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
+      base,
+      base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
+      base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`,
+      base.replace('&variant=gemini', '') + '&fmt=json3',
+      base.replace('&variant=gemini', '') + '&fmt=srv3',
+      base.replace('&variant=gemini', '')
+    ];
 
-    // 3. Try raw base URL
-    try {
-      const text = await safeFetch(base);
-      if (text) {
+    for (const u of urlsToTry) {
+      const text = await safeFetch(u);
+      if (text && text.trim().length > 0) {
         const segs = SubtitleParser.parse(text);
         if (segs && segs.length > 0) return segs;
       }
-    } catch (e) {}
-
-    // 4. Try URL + &fmt=srv3
-    try {
-      const srv3Url = base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`;
-      const text = await safeFetch(srv3Url);
-      if (text) {
-        const segs = SubtitleParser.parse(text);
-        if (segs && segs.length > 0) return segs;
-      }
-    } catch (e) {}
-
-    // 5. Try URL + &fmt=srv1
-    try {
-      const srv1Url = base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`;
-      const text = await safeFetch(srv1Url);
-      if (text) {
-        const segs = SubtitleParser.parse(text);
-        if (segs && segs.length > 0) return segs;
-      }
-    } catch (e) {}
+    }
 
     return [];
   }
@@ -232,7 +299,7 @@
         });
       });
 
-      return true; // Async response
+      return true;
     }
 
     if (message.type === 'FETCH_SUBTITLES') {
@@ -248,7 +315,7 @@
           console.error('[YT-Dictation] Error fetching subtitles:', err);
           sendResponse({ success: false, error: err.message });
         });
-      return true; // Async response
+      return true;
     }
 
     if (message.type === 'SEEK_VIDEO') {
