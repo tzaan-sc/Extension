@@ -5,15 +5,12 @@
 (function () {
   // State
   let activeTabId = null;
-  let videoData = null;
   let tracks = [];
   let segments = [];
   let currentIndex = 0;
   let isAutoPause = true;
   let isLoop = false;
   let currentSpeed = 1.0;
-  let isChecking = false;
-  let isVideoPlaying = false;
 
   // DOM Elements
   const connectionStatus = document.getElementById('connectionStatus');
@@ -73,30 +70,56 @@
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }
 
-  // Get current active YouTube tab
+  // Find active YouTube tab
   async function getActiveYouTubeTab() {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tabs.length > 0 && tabs[0].url && tabs[0].url.includes('youtube.com')) {
-      return tabs[0];
+    try {
+      const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTabs.length > 0 && activeTabs[0].url && activeTabs[0].url.includes('youtube.com')) {
+        return activeTabs[0];
+      }
+
+      // Check all YouTube watch tabs
+      const ytWatchTabs = await chrome.tabs.query({ url: '*://*.youtube.com/watch*' });
+      if (ytWatchTabs.length > 0) {
+        return ytWatchTabs[0];
+      }
+
+      const allYtTabs = await chrome.tabs.query({ url: '*://*.youtube.com/*' });
+      return allYtTabs.length > 0 ? allYtTabs[0] : null;
+    } catch (e) {
+      console.warn('[YT-Dictation] Error querying tabs:', e);
+      return null;
     }
-    // Fallback: search any youtube.com tab
-    const ytTabs = await chrome.tabs.query({ url: '*://*.youtube.com/*' });
-    return ytTabs.length > 0 ? ytTabs[0] : null;
   }
 
-  // Send message to content script
-  async function sendMessageToContent(message) {
+  // Send message to content script with auto-injection fallback
+  async function sendMessageToContent(message, isRetry = false) {
     const tab = await getActiveYouTubeTab();
     if (!tab || !tab.id) {
-      updateStatus(false, 'Không tìm thấy tab YouTube');
+      updateStatus(false, 'Chưa mở tab YouTube');
+      videoTitle.textContent = 'Hãy mở một video trên YouTube';
       return null;
     }
     activeTabId = tab.id;
+
     try {
       return await chrome.tabs.sendMessage(tab.id, message);
     } catch (e) {
-      console.warn('[YT-Dictation] Error sending message to tab:', e);
-      updateStatus(false, 'Hãy tải lại trang YouTube');
+      if (!isRetry && chrome.scripting) {
+        try {
+          // Attempt to inject content script into the tab dynamically
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content/content.js']
+          });
+          // Wait briefly for content script to mount
+          await new Promise(r => setTimeout(r, 300));
+          return await chrome.tabs.sendMessage(tab.id, message);
+        } catch (injectErr) {
+          console.warn('[YT-Dictation] Injection failed:', injectErr);
+        }
+      }
+      updateStatus(false, 'Vui lòng tải lại trang YouTube (F5)');
       return null;
     }
   }
@@ -113,27 +136,29 @@
 
   // Init Data from YouTube
   async function loadVideoInfo() {
-    updateStatus(false, 'Đang quét video...');
+    updateStatus(false, 'Đang kết nối video...');
     const res = await sendMessageToContent({ type: 'GET_VIDEO_DATA' });
 
-    if (res && res.tracks) {
-      updateStatus(true, 'Đã kết nối YouTube');
-      tracks = res.tracks;
+    if (res) {
+      updateStatus(true, 'Đã kết nối');
+      tracks = res.tracks || [];
       if (res.videoDetails && res.videoDetails.title) {
         videoTitle.textContent = res.videoDetails.title;
       }
-
       populateTrackSelect();
     } else {
-      updateStatus(false, 'Vui lòng mở video trên YouTube');
+      updateStatus(false, 'Nhấn F5 trên YouTube để kích hoạt');
     }
   }
 
   function populateTrackSelect() {
     trackSelect.innerHTML = '';
-    if (tracks.length === 0) {
-      trackSelect.innerHTML = '<option value="">Video này không có phụ đề</option>';
+    if (!tracks || tracks.length === 0) {
+      trackSelect.innerHTML = '<option value="">Không tìm thấy phụ đề (bật CC trên video)</option>';
       trackSelect.disabled = true;
+      segments = [];
+      renderCurrentSentence();
+      renderTranscriptList();
       return;
     }
 
@@ -173,7 +198,7 @@
       totalSentenceNum.textContent = segments.length;
       totalSegmentsCount.textContent = segments.length;
       currentIndex = 0;
-      updateStatus(true, `Đã tải ${segments.length} câu`);
+      updateStatus(true, `Sẵn sàng (${segments.length} câu)`);
       renderCurrentSentence();
       renderTranscriptList();
     } else {
@@ -207,7 +232,6 @@
     resultCard.style.display = 'none';
     hintContainer.style.display = 'none';
 
-    // Highlight in transcript list if loaded
     highlightActiveTranscriptItem();
   }
 
@@ -316,7 +340,7 @@
   function renderTranscriptList(filterQuery = '') {
     transcriptList.innerHTML = '';
     if (segments.length === 0) {
-      transcriptList.innerHTML = '<div class="empty-state">Chưa có phụ đề nào được tải.</div>';
+      transcriptList.innerHTML = '<div class="empty-state">Chưa có phụ đề nào. Vui lòng mở video YouTube và chọn phụ đề ở trên.</div>';
       return;
     }
 
@@ -339,7 +363,6 @@
       `;
 
       item.addEventListener('click', () => {
-        // Switch to dictate tab and jump to segment
         switchTab('dictate');
         seekToSegment(idx);
       });
@@ -387,7 +410,7 @@
     }
   }
 
-  // Handle messages from content script (Video time update & events)
+  // Handle messages from content script
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === 'VIDEO_CHANGED') {
       loadVideoInfo();
@@ -395,7 +418,6 @@
 
     if (message.type === 'VIDEO_TIME_UPDATE') {
       const currentTime = message.currentTime;
-      isVideoPlaying = !message.paused;
 
       if (segments.length > 0 && currentIndex < segments.length) {
         const current = segments[currentIndex];
@@ -419,7 +441,29 @@
   // Setup Event Listeners
   function initEventListeners() {
     btnReloadVideo.addEventListener('click', loadVideoInfo);
+    const btnRefreshTab = document.getElementById('btnRefreshTab');
+    if (btnRefreshTab) {
+      btnRefreshTab.addEventListener('click', async () => {
+        const tab = await getActiveYouTubeTab();
+        if (tab && tab.id) {
+          chrome.tabs.reload(tab.id);
+          updateStatus(false, 'Đang tải lại trang YouTube...');
+          setTimeout(loadVideoInfo, 2000);
+        }
+      });
+    }
     trackSelect.addEventListener('change', loadSelectedTrackSubtitles);
+
+    // Auto reload when tab changes
+    chrome.tabs.onActivated.addListener(() => {
+      setTimeout(loadVideoInfo, 300);
+    });
+
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+      if (changeInfo.status === 'complete' && tab.url && tab.url.includes('youtube.com')) {
+        setTimeout(loadVideoInfo, 300);
+      }
+    });
 
     // Tabs
     tabBtns.forEach(btn => {
@@ -477,35 +521,30 @@
 
     // Global Hotkeys
     window.addEventListener('keydown', (e) => {
-      // Replay hotkey: Ctrl + Space
       if (e.ctrlKey && e.code === 'Space') {
         e.preventDefault();
         playCurrentSentence();
         return;
       }
 
-      // Alt + Arrow Right: Next sentence
       if (e.altKey && e.key === 'ArrowRight') {
         e.preventDefault();
         nextSentence();
         return;
       }
 
-      // Alt + Arrow Left: Prev sentence
       if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault();
         prevSentence();
         return;
       }
 
-      // Alt + H: Hint
       if (e.altKey && (e.key === 'h' || e.key === 'H')) {
         e.preventDefault();
         showHint();
         return;
       }
 
-      // Alt + R: Reveal
       if (e.altKey && (e.key === 'r' || e.key === 'R')) {
         e.preventDefault();
         revealAnswer();
