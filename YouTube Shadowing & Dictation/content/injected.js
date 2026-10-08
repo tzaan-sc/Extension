@@ -58,7 +58,7 @@
     };
   }
 
-  window.addEventListener('message', (event) => {
+  window.addEventListener('message', async (event) => {
     if (event.source !== window || !event.data || event.data.source !== 'yt-dictation-cs') {
       return;
     }
@@ -70,6 +70,43 @@
         type: 'RESPONSE_CAPTIONS_TRACKS',
         tracks: info.tracks,
         videoDetails: info.videoDetails
+      }, '*');
+    }
+
+    if (event.data.type === 'FETCH_SUBTITLES_IN_PAGE') {
+      const requestId = event.data.requestId;
+      const baseUrl = event.data.baseUrl;
+      const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
+
+      const urls = [
+        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
+        base,
+        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
+        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`
+      ];
+
+      let rawText = null;
+      for (const u of urls) {
+        try {
+          const res = await window.fetch(u, { credentials: 'include' });
+          if (res.ok) {
+            const txt = await res.text();
+            if (txt && txt.trim().length > 0) {
+              rawText = txt;
+              break;
+            }
+          }
+        } catch (e) {
+          console.warn('[YT-Dictation] In-page fetch trial failed for:', u, e);
+        }
+      }
+
+      window.postMessage({
+        source: 'yt-dictation-page',
+        type: 'FETCH_SUBTITLES_IN_PAGE_RESPONSE',
+        requestId: requestId,
+        success: !!rawText,
+        rawText: rawText
       }, '*');
     }
   });

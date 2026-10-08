@@ -197,29 +197,26 @@
     // 2. Direct fetch fallback from SidePanel context if content script failed
     if (!res || !res.success || !res.segments || res.segments.length === 0) {
       try {
-        const jsonUrl = track.baseUrl.includes('fmt=') ? track.baseUrl : `${track.baseUrl}&fmt=json3`;
-        const fetchRes = await fetch(jsonUrl);
-        const text = await fetchRes.text();
-        const json = JSON.parse(text);
-        if (json && json.events) {
-          const directSegments = [];
-          json.events.forEach((ev) => {
-            if (!ev.segs) return;
-            const segText = ev.segs.map(s => s.utf8 || '').join('').replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
-            if (!segText || segText === '\n') return;
-            const start = (ev.tStartMs || 0) / 1000;
-            const dur = (ev.dDurationMs || 0) / 1000;
-            directSegments.push({
-              id: directSegments.length,
-              start: start,
-              end: start + dur,
-              duration: dur,
-              text: segText
-            });
-          });
-          if (directSegments.length > 0) {
-            res = { success: true, segments: directSegments };
-          }
+        const base = track.baseUrl.startsWith('//') ? `https:${track.baseUrl}` : track.baseUrl;
+        const urlsToTry = [
+          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
+          base,
+          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
+          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`
+        ];
+
+        for (const u of urlsToTry) {
+          try {
+            const fetchRes = await fetch(u);
+            if (fetchRes.ok) {
+              const text = await fetchRes.text();
+              const parsed = SubtitleParser.parse(text);
+              if (parsed && parsed.length > 0) {
+                res = { success: true, segments: parsed };
+                break;
+              }
+            }
+          } catch (err) {}
         }
       } catch (e) {
         console.warn('[YT-Dictation] Direct sidepanel fetch fallback failed:', e);

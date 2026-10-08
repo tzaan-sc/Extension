@@ -3,6 +3,7 @@
   let cachedTracks = [];
   let currentVideoDetails = null;
   let pendingDataResolvers = [];
+  let pendingSubtitleResolvers = {};
 
   function injectMainScript() {
     if (document.getElementById('yt-dictation-injected')) return;
@@ -21,6 +22,20 @@
   // Listen for messages from injected page script
   window.addEventListener('message', (event) => {
     if (event.source !== window || !event.data || event.data.source !== 'yt-dictation-page') {
+      return;
+    }
+
+    if (event.data.type === 'FETCH_SUBTITLES_IN_PAGE_RESPONSE') {
+      const resolver = pendingSubtitleResolvers[event.data.requestId];
+      if (resolver) {
+        delete pendingSubtitleResolvers[event.data.requestId];
+        if (event.data.success && event.data.rawText) {
+          const segs = SubtitleParser.parse(event.data.rawText);
+          resolver(segs);
+        } else {
+          resolver(null);
+        }
+      }
       return;
     }
 
@@ -89,140 +104,89 @@
 
   setInterval(setupVideoListeners, 1000);
 
-  // Universal subtitle parser (JSON3, XML <p>, XML <text>)
-  function parseSubtitles(rawData) {
-    if (!rawData) return [];
-
-    // 1. Try JSON3 format
-    if (typeof rawData === 'string' && (rawData.trim().startsWith('{') || rawData.trim().startsWith('['))) {
-      try {
-        const json = JSON.parse(rawData);
-        if (json && json.events && Array.isArray(json.events)) {
-          const segments = [];
-          json.events.forEach((ev, idx) => {
-            if (!ev.segs || !Array.isArray(ev.segs)) return;
-            const text = ev.segs
-              .map(s => s.utf8 || '')
-              .join('')
-              .replace(/[\n\r]+/g, ' ')
-              .replace(/\s+/g, ' ')
-              .trim();
-
-            if (!text || text === '\n') return;
-            const start = (ev.tStartMs || 0) / 1000;
-            const dur = (ev.dDurationMs || 0) / 1000;
-            segments.push({
-              id: segments.length,
-              start: start,
-              end: start + dur,
-              duration: dur,
-              text: text
-            });
-          });
-          if (segments.length > 0) return segments;
-        }
-      } catch (e) {
-        // Not JSON, continue to XML
-      }
-    }
-
-    // 2. Try XML format
-    try {
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(rawData, 'text/xml');
-      const segments = [];
-
-      // Check <p t="123" d="456"> (milliseconds)
-      const pNodes = xmlDoc.getElementsByTagName('p');
-      if (pNodes.length > 0) {
-        for (let i = 0; i < pNodes.length; i++) {
-          const node = pNodes[i];
-          const t = parseFloat(node.getAttribute('t') || '0');
-          const d = parseFloat(node.getAttribute('d') || '0');
-          const start = t / 1000;
-          const dur = d / 1000;
-
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = node.textContent || '';
-          const text = tempDiv.textContent.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
-
-          if (text) {
-            segments.push({
-              id: segments.length,
-              start: start,
-              end: start + dur,
-              duration: dur,
-              text: text
-            });
-          }
-        }
-        if (segments.length > 0) return segments;
-      }
-
-      // Check <text start="1.23" dur="4.56"> (seconds)
-      const textNodes = xmlDoc.getElementsByTagName('text');
-      if (textNodes.length > 0) {
-        for (let i = 0; i < textNodes.length; i++) {
-          const node = textNodes[i];
-          const start = parseFloat(node.getAttribute('start') || '0');
-          const dur = parseFloat(node.getAttribute('dur') || '0');
-
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = node.textContent || '';
-          const text = tempDiv.textContent.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
-
-          if (text) {
-            segments.push({
-              id: segments.length,
-              start: start,
-              end: start + dur,
-              duration: dur,
-              text: text
-            });
-          }
-        }
-        if (segments.length > 0) return segments;
-      }
-    } catch (e) {
-      console.warn('[YT-Dictation] XML parsing error:', e);
-    }
-
-    return [];
-  }
-
-  // Fetch subtitles helper with format fallbacks
+  // Fetch subtitles helper with in-page context and format fallbacks
   async function fetchSubtitleSegments(baseUrl) {
-    // Attempt 1: Fetch with &fmt=json3
+    if (!baseUrl) return [];
+    const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
+
+    // 1. First priority: In-page fetch (running in YouTube's main context with full cookies & session)
     try {
-      const jsonUrl = baseUrl.includes('fmt=') ? baseUrl : `${baseUrl}&fmt=json3`;
-      const res = await fetch(jsonUrl);
-      const text = await res.text();
-      const segs = parseSubtitles(text);
-      if (segs.length > 0) return segs;
+      const requestId = 'req_' + Math.random().toString(36).substring(2, 9);
+      const inPageResult = await new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          delete pendingSubtitleResolvers[requestId];
+          resolve(null);
+        }, 2000);
+
+        pendingSubtitleResolvers[requestId] = (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        };
+
+        window.postMessage({
+          source: 'yt-dictation-cs',
+          type: 'FETCH_SUBTITLES_IN_PAGE',
+          requestId: requestId,
+          baseUrl: base
+        }, '*');
+      });
+
+      if (inPageResult && inPageResult.length > 0) {
+        return inPageResult;
+      }
     } catch (e) {
-      console.warn('[YT-Dictation] JSON3 fetch failed, trying raw URL:', e);
+      console.warn('[YT-Dictation] In-page fetch error:', e);
     }
 
-    // Attempt 2: Fetch raw URL
-    try {
-      const res = await fetch(baseUrl);
-      const text = await res.text();
-      const segs = parseSubtitles(text);
-      if (segs.length > 0) return segs;
-    } catch (e) {
-      console.warn('[YT-Dictation] Raw URL fetch failed:', e);
+    // Helper fetch with credentials
+    async function safeFetch(url) {
+      try {
+        const res = await fetch(url, { credentials: 'include' });
+        if (!res.ok) return null;
+        return await res.text();
+      } catch (e) {
+        return null;
+      }
     }
 
-    // Attempt 3: Fetch with &fmt=srv1
+    // 2. Direct fetch fallback: Try URL + &fmt=json3
     try {
-      const srvUrl = baseUrl.includes('fmt=') ? baseUrl.replace(/fmt=[^&]+/, 'fmt=srv1') : `${baseUrl}&fmt=srv1`;
-      const res = await fetch(srvUrl);
-      const text = await res.text();
-      const segs = parseSubtitles(text);
-      if (segs.length > 0) return segs;
-    } catch (e) {
-      console.warn('[YT-Dictation] srv1 fetch failed:', e);
-    }
+      const jsonUrl = base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`;
+      const text = await safeFetch(jsonUrl);
+      if (text) {
+        const segs = SubtitleParser.parse(text);
+        if (segs && segs.length > 0) return segs;
+      }
+    } catch (e) {}
+
+    // 3. Try raw base URL
+    try {
+      const text = await safeFetch(base);
+      if (text) {
+        const segs = SubtitleParser.parse(text);
+        if (segs && segs.length > 0) return segs;
+      }
+    } catch (e) {}
+
+    // 4. Try URL + &fmt=srv3
+    try {
+      const srv3Url = base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`;
+      const text = await safeFetch(srv3Url);
+      if (text) {
+        const segs = SubtitleParser.parse(text);
+        if (segs && segs.length > 0) return segs;
+      }
+    } catch (e) {}
+
+    // 5. Try URL + &fmt=srv1
+    try {
+      const srv1Url = base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`;
+      const text = await safeFetch(srv1Url);
+      if (text) {
+        const segs = SubtitleParser.parse(text);
+        if (segs && segs.length > 0) return segs;
+      }
+    } catch (e) {}
 
     return [];
   }
