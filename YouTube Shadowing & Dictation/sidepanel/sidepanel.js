@@ -185,14 +185,15 @@
     const selectedIdx = trackSelect.value;
     if (selectedIdx === '' || !tracks[selectedIdx]) return;
 
-    const track = tracks[selectedIdx];
-    updateStatus(true, 'Đang tải phụ đề...');
+    console.log('[YT-Dictation] Loading subtitles for track:', track);
 
     // 1. Try fetching via content script / in-page context
     let res = await sendMessageToContent({
       type: 'FETCH_SUBTITLES',
       baseUrl: track.baseUrl
     });
+
+    console.log('[YT-Dictation] Content script / In-page result:', res);
 
     const base = track.baseUrl.startsWith('//') ? `https:${track.baseUrl}` : track.baseUrl;
     const urlsToTry = [
@@ -204,13 +205,16 @@
 
     // 2. Background proxy fallback (bypasses all CORS and redirect constraints)
     if (!res || !res.success || !res.segments || res.segments.length === 0) {
+      console.log('[YT-Dictation] Trying Background proxy fallback...');
       try {
         const bgRes = await chrome.runtime.sendMessage({
           type: 'FETCH_URL_BACKGROUND',
           urls: urlsToTry
         });
+        console.log('[YT-Dictation] Background proxy response:', bgRes);
         if (bgRes && bgRes.success && bgRes.text) {
           const parsed = SubtitleParser.parse(bgRes.text);
+          console.log('[YT-Dictation] Parsed from background proxy:', parsed ? parsed.length : 0, 'segments');
           if (parsed && parsed.length > 0) {
             res = { success: true, segments: parsed };
           }
@@ -222,19 +226,26 @@
 
     // 3. Direct fetch fallback from SidePanel context
     if (!res || !res.success || !res.segments || res.segments.length === 0) {
+      console.log('[YT-Dictation] Trying Direct SidePanel fetch fallback...');
       try {
         for (const u of urlsToTry) {
           try {
+            console.log('[YT-Dictation] Direct fetch URL:', u);
             const fetchRes = await fetch(u);
+            console.log('[YT-Dictation] Direct fetch HTTP status:', fetchRes.status);
             if (fetchRes.ok) {
               const text = await fetchRes.text();
+              console.log('[YT-Dictation] Direct fetch response text length:', text.length);
               const parsed = SubtitleParser.parse(text);
+              console.log('[YT-Dictation] Direct fetch parsed count:', parsed ? parsed.length : 0);
               if (parsed && parsed.length > 0) {
                 res = { success: true, segments: parsed };
                 break;
               }
             }
-          } catch (err) {}
+          } catch (err) {
+            console.warn('[YT-Dictation] Direct fetch error on', u, err);
+          }
         }
       } catch (e) {
         console.warn('[YT-Dictation] Direct sidepanel fetch fallback failed:', e);
