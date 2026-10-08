@@ -188,10 +188,43 @@
     const track = tracks[selectedIdx];
     updateStatus(true, 'Đang tải phụ đề...');
 
-    const res = await sendMessageToContent({
+    // 1. Try fetching via content script
+    let res = await sendMessageToContent({
       type: 'FETCH_SUBTITLES',
       baseUrl: track.baseUrl
     });
+
+    // 2. Direct fetch fallback from SidePanel context if content script failed
+    if (!res || !res.success || !res.segments || res.segments.length === 0) {
+      try {
+        const jsonUrl = track.baseUrl.includes('fmt=') ? track.baseUrl : `${track.baseUrl}&fmt=json3`;
+        const fetchRes = await fetch(jsonUrl);
+        const text = await fetchRes.text();
+        const json = JSON.parse(text);
+        if (json && json.events) {
+          const directSegments = [];
+          json.events.forEach((ev) => {
+            if (!ev.segs) return;
+            const segText = ev.segs.map(s => s.utf8 || '').join('').replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
+            if (!segText || segText === '\n') return;
+            const start = (ev.tStartMs || 0) / 1000;
+            const dur = (ev.dDurationMs || 0) / 1000;
+            directSegments.push({
+              id: directSegments.length,
+              start: start,
+              end: start + dur,
+              duration: dur,
+              text: segText
+            });
+          });
+          if (directSegments.length > 0) {
+            res = { success: true, segments: directSegments };
+          }
+        }
+      } catch (e) {
+        console.warn('[YT-Dictation] Direct sidepanel fetch fallback failed:', e);
+      }
+    }
 
     if (res && res.success && res.segments && res.segments.length > 0) {
       segments = res.segments;
