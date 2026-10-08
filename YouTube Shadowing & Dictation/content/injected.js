@@ -58,6 +58,24 @@
     };
   }
 
+  // Safe object recursive search for getTranscriptEndpoint params
+  function findTranscriptParams(obj, depth = 0) {
+    if (!obj || depth > 8 || typeof obj !== 'object') return null;
+    if (obj.getTranscriptEndpoint && obj.getTranscriptEndpoint.params) {
+      return obj.getTranscriptEndpoint.params;
+    }
+    try {
+      for (const k of Object.keys(obj)) {
+        const val = obj[k];
+        if (val && typeof val === 'object') {
+          const found = findTranscriptParams(val, depth + 1);
+          if (found) return found;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
   // 1. Fetch Innertube get_transcript
   async function fetchInnertubeTranscript() {
     try {
@@ -70,37 +88,20 @@
         }
       };
 
-      // Search for getTranscriptEndpoint in watchFlexy or ytInitialData
-      let params = null;
-      const watchFlexy = document.querySelector('ytd-watch-flexy');
-      const dataSource = [
-        watchFlexy?.response,
-        watchFlexy?.playerData,
-        window.ytInitialData,
-        window.ytInitialPlayerResponse
-      ];
-
-      for (const data of dataSource) {
-        if (!data) continue;
-        const str = JSON.stringify(data);
-        const match = str.match(/"getTranscriptEndpoint":\{"params":"([^"]+)"/);
-        if (match) {
-          params = match[1];
-          break;
+      let params = findTranscriptParams(window.ytInitialData);
+      if (!params) {
+        const watchFlexy = document.querySelector('ytd-watch-flexy');
+        if (watchFlexy) {
+          params = findTranscriptParams(watchFlexy.response) || findTranscriptParams(watchFlexy.playerData);
         }
       }
 
       if (apiKey && params) {
-        console.log('[YT-Dictation INJECTED] Calling get_transcript with params...');
+        console.log('[YT-Dictation INJECTED] Calling get_transcript with extracted params...');
         const res = await window.fetch(`https://www.youtube.com/youtubei/v1/get_transcript?key=${apiKey}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            context: context,
-            params: params
-          })
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ context: context, params: params })
         });
 
         if (res.ok) {
@@ -125,7 +126,7 @@
               }
             });
             if (segments.length > 0) {
-              console.log('[YT-Dictation INJECTED] Loaded', segments.length, 'segments via get_transcript!');
+              console.log('[YT-Dictation INJECTED] Loaded', segments.length, 'segments via get_transcript API!');
               return segments;
             }
           }
@@ -133,64 +134,6 @@
       }
     } catch (e) {
       console.warn('[YT-Dictation] Innertube transcript attempt failed:', e);
-    }
-    return null;
-  }
-
-  // 2. Fetch DOM transcript by clicking button
-  async function fetchDomTranscript() {
-    try {
-      let nodes = document.querySelectorAll('ytd-transcript-segment-renderer');
-      if (nodes.length === 0) {
-        // Expand description
-        const expandBtn = document.querySelector('#expand, ytd-text-inline-expander #expand, #description-inline-expander');
-        if (expandBtn) expandBtn.click();
-
-        // Click transcript button
-        const showBtn = document.querySelector('ytd-video-description-transcript-section-renderer button, button[aria-label="Show transcript"], button[aria-label="Hiện bản ghi lời thoại"], button[aria-label*="transcript" i], button[aria-label*="bản ghi" i]');
-        if (showBtn) {
-          console.log('[YT-Dictation INJECTED] Clicking Show Transcript button...');
-          showBtn.click();
-          for (let i = 0; i < 15; i++) {
-            await new Promise(r => setTimeout(r, 200));
-            nodes = document.querySelectorAll('ytd-transcript-segment-renderer');
-            if (nodes.length > 0) break;
-          }
-        }
-      }
-
-      if (nodes.length > 0) {
-        const segments = [];
-        nodes.forEach((node, idx) => {
-          const timeText = node.querySelector('.segment-timestamp, .formatted-timestamp')?.textContent?.trim() || '0:00';
-          const text = node.querySelector('.segment-text, yt-formatted-string.segment-text')?.textContent?.trim() || '';
-
-          const parts = timeText.split(':').map(p => parseInt(p, 10));
-          let start = 0;
-          if (parts.length === 3) start = parts[0] * 3600 + parts[1] * 60 + parts[2];
-          else if (parts.length === 2) start = parts[0] * 60 + parts[1];
-
-          if (text) {
-            segments.push({
-              id: idx,
-              start: start,
-              end: start + 3,
-              duration: 3,
-              text: text
-            });
-          }
-        });
-        for (let i = 0; i < segments.length - 1; i++) {
-          segments[i].end = segments[i + 1].start;
-          segments[i].duration = parseFloat((segments[i].end - segments[i].start).toFixed(2));
-        }
-        if (segments.length > 0) {
-          console.log('[YT-Dictation INJECTED] Loaded', segments.length, 'segments from DOM!');
-          return segments;
-        }
-      }
-    } catch (e) {
-      console.warn('[YT-Dictation INJECTED] DOM transcript failed:', e);
     }
     return null;
   }
@@ -227,30 +170,14 @@
         return;
       }
 
-      // 2. Try DOM Transcript Trigger
-      const domSegments = await fetchDomTranscript();
-      if (domSegments && domSegments.length > 0) {
-        window.postMessage({
-          source: 'yt-dictation-page',
-          type: 'FETCH_SUBTITLES_IN_PAGE_RESPONSE',
-          requestId: requestId,
-          success: true,
-          segments: domSegments
-        }, '*');
-        return;
-      }
-
-      // 3. Try URL variations
+      // 2. Try URL variations
       if (baseUrl) {
         const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
         const urls = [
           base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
           base,
           base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
-          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`,
-          base.replace('&variant=gemini', '') + '&fmt=json3',
-          base.replace('&variant=gemini', '') + '&fmt=srv3',
-          base.replace('&variant=gemini', '')
+          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`
         ];
 
         let rawText = null;

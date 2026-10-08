@@ -109,17 +109,45 @@
 
   setInterval(setupVideoListeners, 1000);
 
-  // Helper to extract transcript from DOM if available
-  function extractFromDomTranscript() {
+  // Helper to extract transcript from DOM if available or trigger it
+  async function extractFromDomTranscript() {
     try {
-      const segmentNodes = document.querySelectorAll('ytd-transcript-segment-renderer');
+      let segmentNodes = document.querySelectorAll('ytd-transcript-segment-renderer');
+      if (segmentNodes.length === 0) {
+        // Expand description
+        const expandBtn = document.querySelector('#expand, ytd-text-inline-expander #expand, #description-inline-expander, #description.ytd-watch-metadata');
+        if (expandBtn) {
+          expandBtn.click();
+          await new Promise(r => setTimeout(r, 200));
+        }
+
+        // Try clicking Show Transcript button
+        let showBtn = document.querySelector('ytd-video-description-transcript-section-renderer button, ytd-transcript-renderer button, button[aria-label*="transcript" i], button[aria-label*="bản ghi" i]');
+        if (!showBtn) {
+          const allBtns = Array.from(document.querySelectorAll('button, ytd-button-renderer, .yt-spec-button-shape-next'));
+          showBtn = allBtns.find(b => {
+            const t = (b.textContent || '').toLowerCase();
+            return t.includes('transcript') || t.includes('bản ghi lời thoại') || t.includes('bản ghi');
+          });
+        }
+
+        if (showBtn) {
+          console.log('[YT-Dictation CS] Found and clicking transcript button...');
+          showBtn.click();
+          for (let i = 0; i < 25; i++) {
+            await new Promise(r => setTimeout(r, 100));
+            segmentNodes = document.querySelectorAll('ytd-transcript-segment-renderer');
+            if (segmentNodes.length > 0) break;
+          }
+        }
+      }
+
       if (segmentNodes && segmentNodes.length > 0) {
         const segments = [];
         segmentNodes.forEach((node, idx) => {
           const timeText = node.querySelector('.segment-timestamp, .formatted-timestamp')?.textContent?.trim() || '0:00';
           const text = node.querySelector('.segment-text, yt-formatted-string.segment-text')?.textContent?.trim() || '';
 
-          // Parse 0:00 or 1:23:45 to seconds
           const parts = timeText.split(':').map(p => parseInt(p, 10));
           let start = 0;
           if (parts.length === 3) start = parts[0] * 3600 + parts[1] * 60 + parts[2];
@@ -129,18 +157,20 @@
             segments.push({
               id: idx,
               start: start,
-              end: start + 3, // approximate
+              end: start + 3,
               duration: 3,
               text: text
             });
           }
         });
-        // Adjust end times based on next segment start
         for (let i = 0; i < segments.length - 1; i++) {
           segments[i].end = segments[i + 1].start;
           segments[i].duration = parseFloat((segments[i].end - segments[i].start).toFixed(2));
         }
-        if (segments.length > 0) return segments;
+        if (segments.length > 0) {
+          console.log('[YT-Dictation CS] Successfully extracted', segments.length, 'segments from DOM!');
+          return segments;
+        }
       }
     } catch (e) {
       console.warn('[YT-Dictation] DOM transcript extraction failed:', e);
@@ -189,7 +219,7 @@
         const timer = setTimeout(() => {
           delete pendingSubtitleResolvers[requestId];
           resolve(null);
-        }, 2500);
+        }, 4000);
 
         pendingSubtitleResolvers[requestId] = (result) => {
           clearTimeout(timer);
@@ -211,8 +241,8 @@
       console.warn('[YT-Dictation] In-page fetch error:', e);
     }
 
-    // 2. Second priority: Check DOM transcript elements
-    const domSegments = extractFromDomTranscript();
+    // 2. Second priority: Active DOM transcript triggering
+    const domSegments = await extractFromDomTranscript();
     if (domSegments && domSegments.length > 0) {
       return domSegments;
     }
