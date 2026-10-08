@@ -185,6 +185,8 @@
     const selectedIdx = trackSelect.value;
     if (selectedIdx === '' || !tracks[selectedIdx]) return;
 
+    const track = tracks[selectedIdx];
+    updateStatus(true, 'Đang tải phụ đề...');
     console.log('[YT-Dictation] Loading subtitles for track:', track);
 
     // 1. Try fetching via content script / in-page context
