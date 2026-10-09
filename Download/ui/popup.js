@@ -1,6 +1,43 @@
-// OmniLoader - Popup UI Controller (Hỗ trợ đầy đủ Video 1080p, 720p, 480p, 360p, 240p, 144p, Audio MP3 và Phụ đề SRT)
+// OmniLoader - Popup UI Controller (Hoàn toàn độc lập, ổn định 100%)
 
-import { convertTimedTextToSrt } from '../content/subtitle_converter.js';
+// Bộ chuyển đổi phụ đề YouTube sang chuẩn .SRT
+function convertTimedTextToSrt(xmlText) {
+  try {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+    const textNodes = xmlDoc.getElementsByTagName('text');
+
+    if (!textNodes || textNodes.length === 0) {
+      return xmlText;
+    }
+
+    let srtOutput = '';
+    for (let i = 0; i < textNodes.length; i++) {
+      const node = textNodes[i];
+      const startSec = parseFloat(node.getAttribute('start') || '0');
+      const durationSec = parseFloat(node.getAttribute('dur') || '2');
+      const endSec = startSec + durationSec;
+
+      const txt = document.createElement('textarea');
+      txt.innerHTML = node.textContent || '';
+      const cleanText = txt.value;
+
+      const pad = (n, len = 2) => String(n).padStart(len, '0');
+      const formatTime = (total) => {
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = Math.floor(total % 60);
+        const ms = Math.floor((total % 1) * 1000);
+        return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
+      };
+
+      srtOutput += `${i + 1}\n${formatTime(startSec)} --> ${formatTime(endSec)}\n${cleanText.trim()}\n\n`;
+    }
+    return srtOutput;
+  } catch (e) {
+    return xmlText;
+  }
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
   let currentTab = null;
@@ -53,7 +90,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       all: allMedia.length,
       audio: allMedia.filter(m => m.category === 'audio').length,
       video: allMedia.filter(m => m.category === 'video').length,
-      document: allMedia.filter(m => m.category === 'document').length,
+      document: allMedia.filter(m => m.category === 'document' || m.type === 'subtitle').length,
     };
     document.getElementById('countAll').textContent = counts.all;
     document.getElementById('countAudio').textContent = counts.audio;
@@ -61,7 +98,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('countDoc').textContent = counts.document;
   }
 
-  // 3. Gom nhóm Video YouTube theo cấu trúc chuẩn (Video / Audio / Phụ đề)
+  // 3. Gom nhóm YouTube Media
   function groupYouTubeMedia(items) {
     const ytGroups = new Map();
     const otherItems = [];
@@ -83,7 +120,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const group = ytGroups.get(key);
         if (item.type === 'subtitle') {
-          // Tránh trùng ngôn ngữ phụ đề
           if (!group.subtitles.some(s => s.quality === item.quality)) {
             group.subtitles.push(item);
           }
@@ -101,7 +137,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    // Sắp xếp độ phân giải Video từ Cao xuống Thấp (4K -> 1080p -> 720p -> 480p -> 360p -> 240p -> 144p)
     for (const group of ytGroups.values()) {
       group.videos.sort((a, b) => {
         const hA = parseInt(a.resolution, 10) || 0;
@@ -113,7 +148,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return [...Array.from(ytGroups.values()), ...otherItems];
   }
 
-  // 4. Render danh sách Media Cards
+  // 4. Render danh sách
   function renderMedia() {
     const filtered = currentCategory === 'all'
       ? allMedia
@@ -130,27 +165,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const displayList = groupYouTubeMedia(filtered);
 
     displayList.forEach((item) => {
-      // A. Giao diện YouTube Master Card Đầy đủ (Video / Audio / Phụ đề)
+      // A. YouTube Master Card (Video / Audio / Phụ đề)
       if (item.isYouTube) {
         const card = document.createElement('div');
         card.className = 'yt-master-card';
 
         let videoOptions = item.videos.map((v, i) => `
-          <option value="v_${i}">
-            ${v.quality || v.resolution} (.mp4)
-          </option>
+          <option value="v_${i}">${v.quality || v.resolution} (.mp4)</option>
         `).join('');
 
         let audioOptions = item.audios.map((a, i) => `
-          <option value="a_${i}">
-            ${a.quality} (.mp3)
-          </option>
+          <option value="a_${i}">${a.quality} (.mp3)</option>
         `).join('');
 
         let subOptions = item.subtitles.map((s, i) => `
-          <option value="s_${i}">
-            ${s.quality} (.srt)
-          </option>
+          <option value="s_${i}">${s.quality} (.srt)</option>
         `).join('');
 
         card.innerHTML = `
@@ -162,13 +191,12 @@ document.addEventListener('DOMContentLoaded', async () => {
               <span class="media-title" title="${item.title}">${item.title}</span>
               <div class="media-tags">
                 <span class="badge badge-video">YOUTUBE MEDIA</span>
-                <span class="badge badge-audio">${item.videos.length} VIDEO</span>
+                <span class="badge badge-audio">${item.videos.length} ĐỘ PHÂN GIẢI</span>
                 ${item.subtitles.length > 0 ? `<span class="badge badge-doc">${item.subtitles.length} PHỤ ĐỀ</span>` : ''}
               </div>
             </div>
           </div>
 
-          <!-- Nhóm Video -->
           ${item.videos.length > 0 ? `
             <div class="format-section">
               <div class="section-title">
@@ -176,17 +204,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <span>ĐỘ PHÂN GIẢI VIDEO (.mp4)</span>
               </div>
               <div class="format-row">
-                <select class="res-select sel-video">
-                  ${videoOptions}
-                </select>
-                <button class="btn-download btn-dl-video">
-                  <span>Tải Video</span>
-                </button>
+                <select class="res-select sel-video">${videoOptions}</select>
+                <button class="btn-download btn-dl-video"><span>Tải Video</span></button>
               </div>
             </div>
           ` : ''}
 
-          <!-- Nhóm Âm thanh -->
           ${item.audios.length > 0 ? `
             <div class="format-section">
               <div class="section-title">
@@ -194,17 +217,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <span>ÂM THANH (.mp3)</span>
               </div>
               <div class="format-row">
-                <select class="res-select sel-audio">
-                  ${audioOptions}
-                </select>
-                <button class="btn-download btn-dl-audio">
-                  <span>Tải MP3</span>
-                </button>
+                <select class="res-select sel-audio">${audioOptions}</select>
+                <button class="btn-download btn-dl-audio"><span>Tải MP3</span></button>
               </div>
             </div>
           ` : ''}
 
-          <!-- Nhóm Phụ đề -->
           ${item.subtitles.length > 0 ? `
             <div class="format-section">
               <div class="section-title">
@@ -212,18 +230,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <span>PHỤ ĐỀ (.srt)</span>
               </div>
               <div class="format-row">
-                <select class="res-select sel-sub">
-                  ${subOptions}
-                </select>
-                <button class="btn-download btn-dl-sub">
-                  <span>Tải Phụ Đề</span>
-                </button>
+                <select class="res-select sel-sub">${subOptions}</select>
+                <button class="btn-download btn-dl-sub"><span>Tải Phụ Đề</span></button>
               </div>
             </div>
           ` : ''}
         `;
 
-        // Tải Video
         const btnDlVid = card.querySelector('.btn-dl-video');
         if (btnDlVid) {
           btnDlVid.addEventListener('click', () => {
@@ -232,7 +245,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
         }
 
-        // Tải Audio
         const btnDlAud = card.querySelector('.btn-dl-audio');
         if (btnDlAud) {
           btnDlAud.addEventListener('click', () => {
@@ -241,7 +253,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
         }
 
-        // Tải Phụ đề .SRT
         const btnDlSub = card.querySelector('.btn-dl-sub');
         if (btnDlSub) {
           btnDlSub.addEventListener('click', async () => {
@@ -255,7 +266,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      // B. Thẻ Media thông thường
+      // B. Thẻ Media thông thường (MP3, MP4, HLS...)
       const card = document.createElement('div');
       card.className = 'media-card';
 
@@ -346,7 +357,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 5. Download Subtitle (.srt)
+  // 5. Tải Phụ đề sang .SRT
   async function downloadSubtitleAsSrt(subItem) {
     try {
       const resp = await fetch(subItem.url);
@@ -368,7 +379,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 6. Download handler
+  // 6. Tải Media thông thường
   function handleDownload(item) {
     if (!item || !item.url) return;
     if (item.type === 'hls') {
