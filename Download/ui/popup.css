@@ -205,15 +205,15 @@ body {
 /* Document Toolbar (Chỉ hiển thị trong Tab Tài liệu) */
 .doc-toolbar {
   display: flex;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 6px;
+  margin-bottom: 2px;
 }
 
 .doc-toolbar .tool-btn {
   flex: 1;
   background: rgba(26, 35, 58, 0.4);
   border: 1px dashed rgba(255, 255, 255, 0.15);
-  padding: 8px 10px;
+  padding: 8px 6px;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   font-size: 11px;
@@ -221,9 +221,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .doc-toolbar .tool-btn.highlight {
@@ -236,6 +237,59 @@ body {
   border-color: var(--accent-emerald);
   color: #fff;
   background: rgba(16, 185, 129, 0.2);
+}
+
+/* Document VIP Resolver Box */
+.doc-vip-box {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(99, 102, 241, 0.15));
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vip-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.vip-subtext {
+  font-size: 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vip-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.vip-input {
+  flex: 1;
+  background: rgba(11, 15, 25, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.vip-input:focus {
+  border-color: var(--accent-amber);
+}
+
+.btn-vip-go {
+  background: linear-gradient(135deg, var(--accent-amber), var(--accent-rose)) !important;
+  font-size: 11px !important;
+  padding: 6px 12px !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35) !important;
 }
 
 /* Media List Container */

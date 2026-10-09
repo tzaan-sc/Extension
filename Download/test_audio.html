@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Trang Thử Nghiệm Âm Thanh & Video - OmniLoader Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: #0f172a; color: #f8fafc; padding: 30px 20px; display: flex; flex-direction: column; align-items: center; }
+    .header-box { max-width: 700px; width: 100%; text-align: center; margin-bottom: 25px; background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
+    h1 { font-size: 22px; color: #38bdf8; margin-bottom: 8px; }
+    p { color: #94a3b8; font-size: 14px; }
+    .card { background: #1e293b; border-radius: 12px; padding: 20px; max-width: 700px; width: 100%; margin-bottom: 20px; border: 1px solid #334155; }
+    h2 { font-size: 18px; color: #34d399; margin-bottom: 12px; }
+    audio, video { width: 100%; margin-top: 10px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <div class="header-box">
+    <h1>🎵 Trang Thử Nghiệm Âm Thanh & Video (OmniLoader Test)</h1>
+    <p>Bấm phát các media dưới đây và mở OmniLoader để kiểm tra tải MP3, Video và xem trước âm thanh trực tiếp trong popup.</p>
+  </div>
+
+  <div class="card">
+    <h2>1. Âm thanh MP3 (Nhạc nền Test)</h2>
+    <audio controls src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"></audio>
+  </div>
+
+  <div class="card">
+    <h2>2. Âm thanh WAV (Hiệu ứng)</h2>
+    <audio controls src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg"></audio>
+  </div>
+
+  <div class="card">
+    <h2>3. Video HTML5 MP4</h2>
+    <video controls src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"></video>
+  </div>
+</body>
+</html>
