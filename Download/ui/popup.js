@@ -1,4 +1,4 @@
-// OmniLoader - Popup UI Controller
+// OmniLoader - Popup UI Controller (Sắp xếp độ phân giải từ Cao xuống Thấp)
 
 document.addEventListener('DOMContentLoaded', async () => {
   let currentTab = null;
@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('countDoc').textContent = counts.document;
   }
 
-  // 3. Gom nhóm Video đa độ phân giải (YouTube & Stream formats)
+  // 3. Gom nhóm Video đa độ phân giải & sắp xếp từ Cao xuống Thấp
   function groupMediaItems(items) {
     const groups = new Map();
     const singles = [];
@@ -82,6 +82,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         singles.push(item);
       }
     });
+
+    // Sắp xếp các format: 4K -> 1080p -> 720p -> 480p -> 360p -> Audio
+    for (const group of groups.values()) {
+      group.formats.sort((a, b) => {
+        const getRank = (f) => {
+          const q = (f.quality || '').toLowerCase();
+          if (q.includes('4k') || q.includes('2160')) return 100;
+          if (q.includes('2k') || q.includes('1440')) return 90;
+          if (q.includes('1080')) return 80;
+          if (q.includes('720')) return 70;
+          if (q.includes('480')) return 60;
+          if (q.includes('360')) return 50;
+          if (q.includes('240')) return 40;
+          if (q.includes('144')) return 30;
+          if (f.category === 'audio') return 10;
+          return 20;
+        };
+        return getRank(b) - getRank(a);
+      });
+    }
 
     return [...Array.from(groups.values()), ...singles];
   }
@@ -110,7 +130,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (item.isGroup && item.formats?.length > 0) {
         const optionsHtml = item.formats.map((f, i) => `
           <option value="${i}">
-            ${f.quality || f.format || f.ext} - ${f.sizeFormatted || 'Chất lượng cao'}
+            ${f.quality || f.format || f.ext} [${f.sizeFormatted || 'Tự động'}]
           </option>
         `).join('');
 
@@ -123,14 +143,14 @@ document.addEventListener('DOMContentLoaded', async () => {
               <span class="media-title" title="${item.title}">${item.title}</span>
               <div class="media-tags">
                 <span class="badge badge-video">YOUTUBE VIDEO</span>
-                <span class="media-size">${item.formats.length} định dạng</span>
+                <span class="badge badge-audio">${item.formats.length} ĐỘ PHÂN GIẢI</span>
               </div>
             </div>
           </div>
 
           <div class="res-selector-box">
-            <label class="res-label">Chọn độ phân giải:</label>
-            <select class="res-select" id="res_${item.id}">
+            <label class="res-label">Chọn độ phân giải (4K / 1080p / 720p / 360p / MP3):</label>
+            <select class="res-select">
               ${optionsHtml}
             </select>
           </div>
@@ -142,9 +162,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <polyline points="7 10 12 15 17 10"></polyline>
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
-              <span>Tải xuống</span>
+              <span>Tải bản đã chọn</span>
             </button>
-            <button class="btn-extract-audio btn-group-audio" title="Tải nhanh file âm thanh MP3/M4A">
+            <button class="btn-extract-audio btn-group-audio" title="Tải nhanh file âm thanh M4A/MP3">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>
               </svg>
@@ -153,14 +173,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           </div>
         `;
 
-        // Tải format được chọn trong dropdown
         card.querySelector('.btn-dl-group').addEventListener('click', () => {
           const select = card.querySelector('.res-select');
           const chosenFormat = item.formats[parseInt(select.value, 10) || 0];
           handleDownload(chosenFormat);
         });
 
-        // Nút lấy nhanh file âm thanh
         card.querySelector('.btn-group-audio').addEventListener('click', () => {
           const audioFmt = item.formats.find(f => f.category === 'audio') || item.formats[item.formats.length - 1];
           handleDownload(audioFmt);
@@ -170,7 +188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      // B. Thẻ Media đơn lẻ (Video thường, MP3, Tài liệu, HLS)
+      // B. Thẻ Media đơn lẻ
       const isAudio = item.category === 'audio';
       const isVideo = item.category === 'video';
       const isHls = item.type === 'hls';

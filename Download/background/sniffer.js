@@ -1,7 +1,6 @@
-// OmniLoader - Network & Media Sniffer Module (Persistent Storage)
+// OmniLoader - Network & Media Sniffer Module (Persistent Storage & Multi-Quality Keying)
 
 export class MediaSniffer {
-  // Lấy danh sách media của tab từ chrome.storage.session
   static async getMedia(tabId) {
     if (!tabId || tabId < 0) return [];
     const key = `media_tab_${tabId}`;
@@ -9,18 +8,16 @@ export class MediaSniffer {
     return data[key] || [];
   }
 
-  // Thêm mục media vào tab
   static async addMedia(tabId, item) {
     if (!tabId || tabId < 0 || !item.url) return null;
     const key = `media_tab_${tabId}`;
     const existing = await this.getMedia(tabId);
 
-    // Kiểm tra trùng lặp URL
-    const cleanUrl = item.url.split('?')[0];
-    const itemIndex = existing.findIndex(m => m.url.split('?')[0] === cleanUrl && m.ext === item.ext);
+    // Tạo Unique Key bao gồm cả itag/quality để không bị đè độ phân giải khác nhau
+    const itemKey = item.id || (item.url + (item.quality || '') + (item.format || ''));
+    const itemIndex = existing.findIndex(m => (m.id === item.id) || (m.url === item.url && m.quality === item.quality));
 
     if (itemIndex >= 0) {
-      // Cập nhật thông tin nếu có thêm size
       if (!existing[itemIndex].size && item.size) {
         existing[itemIndex].size = item.size;
         existing[itemIndex].sizeFormatted = item.sizeFormatted;
@@ -34,20 +31,18 @@ export class MediaSniffer {
     return item;
   }
 
-  // Xóa dữ liệu của tab khi đóng hoặc reload
   static async clearTab(tabId) {
     if (!tabId || tabId < 0) return;
     const key = `media_tab_${tabId}`;
     await chrome.storage.session.remove(key).catch(() => {});
   }
 
-  // Phân loại định dạng file
   static detectType(url, mimeType = '', responseHeaders = []) {
     if (!url) return null;
     const cleanUrl = url.split('?')[0].toLowerCase();
     const mime = (mimeType || '').toLowerCase();
 
-    // 1. Âm thanh (Audio)
+    // 1. Âm thanh
     if (cleanUrl.endsWith('.mp3') || mime.includes('audio/mpeg') || mime.includes('audio/mp3') || url.includes('.mp3')) {
       return { type: 'audio', category: 'audio', ext: 'mp3', format: 'MP3 Audio' };
     }
@@ -57,20 +52,17 @@ export class MediaSniffer {
     if (cleanUrl.endsWith('.wav') || mime.includes('audio/wav') || url.includes('.wav')) {
       return { type: 'audio', category: 'audio', ext: 'wav', format: 'WAV Audio' };
     }
-    if (cleanUrl.endsWith('.ogg') || mime.includes('audio/ogg') || mime.includes('application/ogg')) {
+    if (cleanUrl.endsWith('.ogg') || mime.includes('audio/ogg')) {
       return { type: 'audio', category: 'audio', ext: 'ogg', format: 'OGG Audio' };
     }
-    if (cleanUrl.endsWith('.aac') || mime.includes('audio/aac') || url.includes('.aac')) {
+    if (cleanUrl.endsWith('.aac') || mime.includes('audio/aac')) {
       return { type: 'audio', category: 'audio', ext: 'aac', format: 'AAC Audio' };
-    }
-    if (cleanUrl.endsWith('.flac') || mime.includes('audio/flac')) {
-      return { type: 'audio', category: 'audio', ext: 'flac', format: 'FLAC Audio' };
     }
     if (mime.startsWith('audio/')) {
       return { type: 'audio', category: 'audio', ext: 'mp3', format: 'Audio Stream' };
     }
 
-    // 2. Luồng phân mảnh HLS / DASH
+    // 2. HLS / DASH
     if (cleanUrl.endsWith('.m3u8') || mime.includes('application/x-mpegurl') || mime.includes('application/vnd.apple.mpegurl') || url.includes('.m3u8')) {
       return { type: 'hls', category: 'video', ext: 'm3u8', format: 'HLS Stream (m3u8)' };
     }
@@ -78,7 +70,7 @@ export class MediaSniffer {
       return { type: 'dash', category: 'video', ext: 'mpd', format: 'DASH Stream (mpd)' };
     }
 
-    // 3. Video trực tiếp
+    // 3. Video
     if (cleanUrl.endsWith('.mp4') || mime.includes('video/mp4') || url.includes('.mp4')) {
       return { type: 'video', category: 'video', ext: 'mp4', format: 'MP4 Video' };
     }
@@ -103,7 +95,7 @@ export class MediaSniffer {
     return null;
   }
 
-  static extractFilename(url, headers = [], fallbackExt = 'mp3') {
+  static extractFilename(url, headers = [], fallbackExt = 'mp4') {
     const contentDisposition = headers.find(h => h.name.toLowerCase() === 'content-disposition');
     if (contentDisposition && contentDisposition.value) {
       const match = contentDisposition.value.match(/filename\*?=['"]?(?:UTF-\d['"]*)?([^;\r\n"']*)['"]?/i);
@@ -128,11 +120,11 @@ export class MediaSniffer {
       }
     } catch (e) {}
 
-    return `Audio_${Date.now()}.${fallbackExt}`;
+    return `Media_${Date.now()}.${fallbackExt}`;
   }
 
   static formatSize(bytes) {
-    if (!bytes || isNaN(bytes) || bytes <= 0) return 'Audio Stream';
+    if (!bytes || isNaN(bytes) || bytes <= 0) return 'Tự động tối ưu';
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;

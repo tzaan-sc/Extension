@@ -1,36 +1,28 @@
-// OmniLoader - Content Script
-// Quét sâu DOM, kết nối Injected Script và báo cáo Media về Background
+// OmniLoader - Content Script (Đầy đủ độ phân giải 4K, 1080p, 720p, 480p, 360p, MP3)
 
 (function () {
   'use strict';
 
-  // 1. Inject script vào Main World
   function injectMainWorldScript() {
     try {
       const script = document.createElement('script');
       script.src = chrome.runtime.getURL('content/injected.js');
-      script.onload = function () {
-        this.remove();
-      };
+      script.onload = function () { this.remove(); };
       (document.head || document.documentElement).appendChild(script);
-    } catch (e) {
-      console.warn('[OmniLoader] Cannot inject main script:', e);
-    }
+    } catch (e) {}
   }
-
   injectMainWorldScript();
 
-  // 2. Lắng nghe thông điệp từ Injected Script
   window.addEventListener('message', (event) => {
     if (event.source !== window || !event.data || !event.data.type) return;
 
-    // A. Bắt link mạng từ Fetch / XHR / Media Play
     if (event.data.type === 'OMNILOADER_SNIFFED_URL') {
       const { url, title } = event.data;
       const isM3u8 = url.includes('.m3u8');
       const isAudio = url.includes('.mp3') || url.includes('.m4a') || url.includes('.wav');
 
       reportMedia({
+        id: `sniff_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
         url: url,
         filename: `${sanitizeFilename(title || document.title)}.${isM3u8 ? 'mp4' : (isAudio ? 'mp3' : 'mp4')}`,
         type: isM3u8 ? 'hls' : (isAudio ? 'audio' : 'video'),
@@ -41,96 +33,82 @@
       });
     }
 
-    // B. Xử lý dữ liệu đặc biệt từ YouTube
     if (event.data.type === 'OMNILOADER_YOUTUBE_DATA') {
       handleYouTubeData(event.data);
     }
   });
 
-  // 3. Phân giải dữ liệu YouTube
+  // Bóc tách toàn bộ độ phân giải YouTube
   function handleYouTubeData(data) {
-    const { videoDetails, streamingData, captionTracks } = data;
+    const { videoDetails, streamingData } = data;
     if (!streamingData) return;
 
     const title = videoDetails?.title || document.title;
     const thumbnail = videoDetails?.thumbnail?.thumbnails?.slice(-1)[0]?.url || '';
 
-    // A. Định dạng chuẩn (Formats: Video + Audio)
+    // 1. Phân tích Formats (360p / 720p chuẩn)
     if (streamingData.formats) {
-      streamingData.formats.forEach((fmt) => {
-        const directUrl = fmt.url || extractCipherUrl(fmt);
-        if (directUrl) {
-          reportMedia({
-            url: directUrl,
-            filename: `${sanitizeFilename(title)} [${fmt.qualityLabel || fmt.quality}].mp4`,
-            title: title,
-            quality: fmt.qualityLabel || fmt.quality,
-            thumbnail: thumbnail,
-            type: 'video',
-            category: 'video',
-            ext: 'mp4',
-            format: `YouTube MP4 (${fmt.qualityLabel || fmt.quality})`,
-            size: fmt.contentLength ? parseInt(fmt.contentLength, 10) : 0,
-            source: 'youtube'
-          });
-        }
-      });
-    }
-
-    // B. Định dạng Adaptive (1080p, 2K, 4K hoặc Âm thanh M4A)
-    if (streamingData.adaptiveFormats) {
-      streamingData.adaptiveFormats.forEach((fmt) => {
+      streamingData.formats.forEach((fmt, idx) => {
         const directUrl = fmt.url || extractCipherUrl(fmt);
         if (!directUrl) return;
 
-        const isAudio = fmt.mimeType && fmt.mimeType.startsWith('audio/');
-        const qualityLabel = fmt.qualityLabel || (isAudio ? `${Math.round((fmt.bitrate || 0) / 1000)}kbps` : 'HD');
-        const ext = isAudio ? 'm4a' : 'mp4';
-
+        const label = fmt.qualityLabel || (fmt.height ? `${fmt.height}p` : '360p');
         reportMedia({
+          id: `yt_std_${fmt.itag || idx}_${label}`,
           url: directUrl,
-          filename: `${sanitizeFilename(title)} [${isAudio ? 'Audio ' + qualityLabel : qualityLabel}].${ext}`,
+          filename: `${sanitizeFilename(title)} [${label}].mp4`,
           title: title,
-          quality: qualityLabel,
+          quality: `${label} (MP4 Có tiếng)`,
           thumbnail: thumbnail,
-          type: isAudio ? 'audio' : 'video',
-          category: isAudio ? 'audio' : 'video',
-          ext: ext,
-          format: isAudio ? `YouTube Âm thanh (${qualityLabel})` : `YouTube Video (${qualityLabel})`,
+          type: 'video',
+          category: 'video',
+          ext: 'mp4',
+          format: `Video MP4 (${label})`,
           size: fmt.contentLength ? parseInt(fmt.contentLength, 10) : 0,
           source: 'youtube'
         });
       });
     }
 
-    // C. HLS Manifest Stream của YouTube
-    if (streamingData.hlsManifestUrl) {
-      reportMedia({
-        url: streamingData.hlsManifestUrl,
-        filename: `${sanitizeFilename(title)} [HLS Stream].mp4`,
-        title: title,
-        thumbnail: thumbnail,
-        type: 'hls',
-        category: 'video',
-        ext: 'm3u8',
-        format: 'YouTube HLS Auto Stream',
-        source: 'youtube'
-      });
-    }
+    // 2. Phân tích Adaptive Formats (1080p Full HD, 2K, 4K, 720p60, 480p, Audio M4A)
+    if (streamingData.adaptiveFormats) {
+      streamingData.adaptiveFormats.forEach((fmt, idx) => {
+        const directUrl = fmt.url || extractCipherUrl(fmt);
+        if (!directUrl) return;
 
-    // D. Phụ đề YouTube
-    if (captionTracks && captionTracks.length > 0) {
-      captionTracks.forEach((cap) => {
-        if (cap.baseUrl) {
+        const isAudio = fmt.mimeType && fmt.mimeType.startsWith('audio/');
+        
+        if (isAudio) {
+          const bitrate = Math.round((fmt.bitrate || 128000) / 1000);
+          const label = `${bitrate}kbps`;
           reportMedia({
-            url: cap.baseUrl + '&fmt=vtt',
-            filename: `${sanitizeFilename(title)} [Phụ đề ${cap.name?.simpleText || 'CC'}].vtt`,
-            title: `${title} - Phụ đề ${cap.name?.simpleText || ''}`,
-            type: 'document',
-            category: 'document',
-            ext: 'vtt',
-            format: `Phụ đề (${cap.name?.simpleText || 'VTT'})`,
-            size: 0,
+            id: `yt_audio_${fmt.itag || idx}_${label}`,
+            url: directUrl,
+            filename: `${sanitizeFilename(title)} [Audio ${label}].m4a`,
+            title: title,
+            quality: `Âm thanh (${label})`,
+            thumbnail: thumbnail,
+            type: 'audio',
+            category: 'audio',
+            ext: 'm4a',
+            format: `Âm thanh M4A/MP3 (${label})`,
+            size: fmt.contentLength ? parseInt(fmt.contentLength, 10) : 0,
+            source: 'youtube'
+          });
+        } else {
+          const label = fmt.qualityLabel || (fmt.height ? `${fmt.height}p` : 'HD');
+          reportMedia({
+            id: `yt_video_${fmt.itag || idx}_${label}`,
+            url: directUrl,
+            filename: `${sanitizeFilename(title)} [${label}].mp4`,
+            title: title,
+            quality: `${label} (Hình ảnh sắc nét)`,
+            thumbnail: thumbnail,
+            type: 'video',
+            category: 'video',
+            ext: 'mp4',
+            format: `Video HD (${label})`,
+            size: fmt.contentLength ? parseInt(fmt.contentLength, 10) : 0,
             source: 'youtube'
           });
         }
@@ -149,9 +127,7 @@
     }
   }
 
-  // 4. Quét sâu toàn bộ DOM
   function scanDOMMedia() {
-    // Video tags
     document.querySelectorAll('video').forEach((video, idx) => {
       let src = video.currentSrc || video.src;
       if (!src) {
@@ -160,6 +136,7 @@
       }
       if (src && !src.startsWith('blob:')) {
         reportMedia({
+          id: `dom_vid_${idx}_${src.substring(0, 30)}`,
           url: src,
           filename: `${sanitizeFilename(document.title)}_video_${idx + 1}.mp4`,
           type: 'video',
@@ -171,7 +148,6 @@
       }
     });
 
-    // Audio tags
     document.querySelectorAll('audio').forEach((audio, idx) => {
       let src = audio.currentSrc || audio.src;
       if (!src) {
@@ -180,6 +156,7 @@
       }
       if (src && !src.startsWith('blob:')) {
         reportMedia({
+          id: `dom_aud_${idx}_${src.substring(0, 30)}`,
           url: src,
           filename: `${sanitizeFilename(document.title)}_audio_${idx + 1}.mp3`,
           type: 'audio',
@@ -190,27 +167,8 @@
         });
       }
     });
-
-    // Các thẻ liên kết (<a>) trỏ tới file media hoặc tài liệu
-    document.querySelectorAll('a[href]').forEach((link) => {
-      const href = link.href.split('?')[0].toLowerCase();
-      if (href.endsWith('.mp4') || href.endsWith('.mp3') || href.endsWith('.pdf') || href.endsWith('.docx') || href.endsWith('.zip')) {
-        const ext = href.split('.').pop();
-        const category = (ext === 'mp4') ? 'video' : (ext === 'mp3' ? 'audio' : 'document');
-        reportMedia({
-          url: link.href,
-          filename: sanitizeFilename(link.textContent || link.title || document.title) + '.' + ext,
-          type: category,
-          category: category,
-          ext: ext,
-          format: `Direct ${ext.toUpperCase()}`,
-          source: 'dom_link'
-        });
-      }
-    });
   }
 
-  // Gửi thông tin về Background
   function reportMedia(item) {
     if (!item.url) return;
     chrome.runtime.sendMessage({
@@ -227,44 +185,7 @@
       .substring(0, 120);
   }
 
-  // Lắng nghe lệnh từ Popup UI
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'SCAN_PAGE_IMAGES') {
-      const images = [];
-      const seen = new Set();
-      document.querySelectorAll('img').forEach((img) => {
-        const src = img.currentSrc || img.src;
-        if (!src || seen.has(src) || src.startsWith('data:image/svg')) return;
-        if (img.naturalWidth > 150 || img.width > 150) {
-          seen.add(src);
-          images.push({
-            url: src,
-            width: img.naturalWidth || img.width,
-            height: img.naturalHeight || img.height
-          });
-        }
-      });
-      sendResponse({ success: true, images });
-      return true;
-    }
-
-    if (request.action === 'SCAN_CANVAS_PAGES') {
-      const canvases = document.querySelectorAll('canvas');
-      const pages = [];
-      canvases.forEach((c, i) => {
-        if (c.width > 200 && c.height > 200) {
-          try {
-            pages.push({
-              index: i + 1,
-              dataUrl: c.toDataURL('image/jpeg', 0.95)
-            });
-          } catch (e) {}
-        }
-      });
-      sendResponse({ success: true, pages });
-      return true;
-    }
-
     if (request.action === 'SCAN_DOM_NOW') {
       scanDOMMedia();
       sendResponse({ success: true });
@@ -272,11 +193,10 @@
     }
   });
 
-  // Chạy quét
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', scanDOMMedia);
   } else {
     scanDOMMedia();
   }
-  setInterval(scanDOMMedia, 3000);
+  setInterval(scanDOMMedia, 2500);
 })();
