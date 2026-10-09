@@ -202,13 +202,14 @@ body {
   color: #fff;
 }
 
-/* Quick Tools */
-.quick-tools {
+/* Document Toolbar (Chỉ hiển thị trong Tab Tài liệu) */
+.doc-toolbar {
   display: flex;
   gap: 8px;
+  margin-bottom: 4px;
 }
 
-.tool-btn {
+.doc-toolbar .tool-btn {
   flex: 1;
   background: rgba(26, 35, 58, 0.4);
   border: 1px dashed rgba(255, 255, 255, 0.15);
@@ -225,13 +226,13 @@ body {
   transition: all 0.2s;
 }
 
-.tool-btn.highlight {
+.doc-toolbar .tool-btn.highlight {
   border-color: rgba(16, 185, 129, 0.5);
   color: #34d399;
   background: rgba(16, 185, 129, 0.1);
 }
 
-.tool-btn:hover {
+.doc-toolbar .tool-btn:hover {
   border-color: var(--accent-emerald);
   color: #fff;
   background: rgba(16, 185, 129, 0.2);

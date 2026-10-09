@@ -1,4 +1,4 @@
-// OmniLoader - Popup UI Controller (Đầy đủ Video, Audio, Phụ đề, Canvas PDF và 1-Click Get-Link VIP)
+// OmniLoader - Popup UI Controller (Phân lập 100% Giao diện & Độc lập Từng Tab)
 
 function convertTimedTextToSrt(xmlText) {
   try {
@@ -110,7 +110,6 @@ function createPdfFromImages(images) {
   return new Blob([buffer], { type: 'application/pdf' });
 }
 
-// Nhận diện nền tảng tài liệu hỗ trợ Get-Link VIP
 function detectVipDocPlatform(url) {
   if (!url) return null;
   const u = url.toLowerCase();
@@ -142,9 +141,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const pageTitleElem = document.getElementById('pageTitle');
   const tabButtons = document.querySelectorAll('.tab-btn');
   const btnRefresh = document.getElementById('btnRefresh');
-  const btnScanAudio = document.getElementById('btnScanAudio');
-  const btnScanCanvas = document.getElementById('btnScanCanvas');
-  const btnUnblurDoc = document.getElementById('btnUnblurDoc');
 
   try {
     const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -235,55 +231,146 @@ document.addEventListener('DOMContentLoaded', async () => {
     return [...Array.from(ytGroups.values()), ...otherItems];
   }
 
+  // Render Danh Sách Hoàn Toàn Tách Biệt Theo Tab
   function renderMedia() {
-    mediaContainer.querySelectorAll('.media-card, .yt-master-card, .vip-doc-card').forEach(el => el.remove());
-
-    // 1. Kiểm tra nếu là trang web tài liệu VIP (Scribd, Studocu, SlideShare...)
-    const vipPlatform = currentTab ? detectVipDocPlatform(currentTab.url) : null;
-    if (vipPlatform && (currentCategory === 'all' || currentCategory === 'document')) {
-      const vipCard = document.createElement('div');
-      vipCard.className = 'vip-doc-card';
-      vipCard.innerHTML = `
-        <div class="vip-header">
-          <span class="badge badge-doc">⚡ GET-LINK VIP</span>
-          <span class="vip-platform">${vipPlatform.name}</span>
-        </div>
-        <div class="vip-body">
-          <p>Phát hiện tài liệu <b>${vipPlatform.name}</b>. Tải trọn bộ file PDF/DOCX gốc chỉ với 1 click!</p>
-          <button class="btn-download btn-vip-download">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            <span>Tải Full File Gốc VIP (1-Click)</span>
-          </button>
-        </div>
-      `;
-      vipCard.querySelector('.btn-vip-download').addEventListener('click', () => {
-        window.open(vipPlatform.getUrl(currentTab.url), '_blank');
-      });
-      mediaContainer.appendChild(vipCard);
-    }
-
-    if (allMedia.length === 0 && !vipPlatform) {
-      emptyState.style.display = 'flex';
-      return;
-    }
-
-    emptyState.style.display = 'none';
-    const displayList = groupYouTubeMedia(allMedia);
+    mediaContainer.innerHTML = '';
     let renderedCount = 0;
 
+    // 1. Nếu đang ở Tab Tài liệu: Hiển thị thanh công cụ tài liệu riêng biệt
+    if (currentCategory === 'document') {
+      const docToolbar = document.createElement('div');
+      docToolbar.className = 'doc-toolbar';
+      docToolbar.innerHTML = `
+        <button id="btnUnblurDoc" class="tool-btn highlight">
+          <span>🔓 Mở mờ & Tải Full</span>
+        </button>
+        <button id="btnScanCanvas" class="tool-btn">
+          <span>📄 Xuất File PDF</span>
+        </button>
+      `;
+
+      // Nút Mở mờ
+      docToolbar.querySelector('#btnUnblurDoc').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const oldText = btn.innerHTML;
+        btn.innerHTML = `<span>⏳ Đang mở khóa...</span>`;
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: currentTab.id },
+            func: () => {
+              document.querySelectorAll('*').forEach(el => {
+                const s = window.getComputedStyle(el);
+                if (s.filter && s.filter.includes('blur')) {
+                  el.style.setProperty('filter', 'none', 'important');
+                }
+                if (s.userSelect === 'none') {
+                  el.style.setProperty('user-select', 'text', 'important');
+                }
+              });
+              document.querySelectorAll('[class*="paywall"], [class*="overlay"], [class*="modal-backdrop"]').forEach(p => {
+                p.style.setProperty('display', 'none', 'important');
+              });
+              document.body.style.setProperty('overflow', 'auto', 'important');
+            }
+          });
+          btn.innerHTML = `<span>✓ Đã mở mờ!</span>`;
+          setTimeout(() => {
+            btn.innerHTML = oldText;
+            docToolbar.querySelector('#btnScanCanvas').click();
+          }, 1200);
+        } catch (err) {
+          btn.innerHTML = `<span>Lỗi mở mờ</span>`;
+          setTimeout(() => { btn.innerHTML = oldText; }, 2000);
+        }
+      });
+
+      // Nút Xuất PDF
+      docToolbar.querySelector('#btnScanCanvas').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const oldText = btn.innerHTML;
+        btn.innerHTML = `<span>⏳ Đang quét PDF...</span>`;
+        try {
+          const results = await chrome.scripting.executeScript({
+            target: { tabId: currentTab.id },
+            func: () => {
+              const pages = [];
+              document.querySelectorAll('canvas').forEach((c, idx) => {
+                if (c.width > 150 && c.height > 150) {
+                  try {
+                    pages.push({ pageNumber: idx + 1, width: c.width, height: c.height, dataUrl: c.toDataURL('image/jpeg', 0.95) });
+                  } catch (err) {}
+                }
+              });
+              return { pages, title: document.title };
+            }
+          });
+
+          const res = results && results[0] ? results[0].result : null;
+          if (res && res.pages && res.pages.length > 0) {
+            btn.innerHTML = `<span>⏳ Đang tạo PDF (${res.pages.length} trang)...</span>`;
+            const pdfBlob = createPdfFromImages(res.pages);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const cleanTitle = (res.title || 'Tai_Lieu').replace(/[\\/:*?"<>|]/g, '_').trim();
+              chrome.runtime.sendMessage({
+                action: 'DOWNLOAD_DIRECT',
+                url: reader.result,
+                filename: `${cleanTitle}.pdf`
+              }, () => {
+                btn.innerHTML = `<span>✓ Đã tải PDF (${res.pages.length} trang)!</span>`;
+                setTimeout(() => { btn.innerHTML = oldText; }, 3000);
+              });
+            };
+            reader.readAsDataURL(pdfBlob);
+          } else {
+            btn.innerHTML = `<span>Không tìm thấy Canvas</span>`;
+            setTimeout(() => { btn.innerHTML = oldText; }, 3000);
+          }
+        } catch (err) {
+          btn.innerHTML = `<span>Lỗi xuất PDF</span>`;
+          setTimeout(() => { btn.innerHTML = oldText; }, 3000);
+        }
+      });
+
+      mediaContainer.appendChild(docToolbar);
+
+      // Thẻ VIP Get-Link nếu là Scribd / Studocu / SlideShare
+      const vipPlatform = currentTab ? detectVipDocPlatform(currentTab.url) : null;
+      if (vipPlatform) {
+        renderedCount++;
+        const vipCard = document.createElement('div');
+        vipCard.className = 'vip-doc-card';
+        vipCard.innerHTML = `
+          <div class="vip-header">
+            <span class="badge badge-doc">⚡ GET-LINK VIP</span>
+            <span class="vip-platform">${vipPlatform.name}</span>
+          </div>
+          <div class="vip-body">
+            <p>Phát hiện tài liệu <b>${vipPlatform.name}</b>. Tải trọn bộ file PDF/DOCX gốc 1-Click!</p>
+            <button class="btn-download btn-vip-download">
+              <span>Tải Full File Gốc VIP (1-Click)</span>
+            </button>
+          </div>
+        `;
+        vipCard.querySelector('.btn-vip-download').addEventListener('click', () => {
+          window.open(vipPlatform.getUrl(currentTab.url), '_blank');
+        });
+        mediaContainer.appendChild(vipCard);
+      }
+    }
+
+    const displayList = groupYouTubeMedia(allMedia);
+
     displayList.forEach((item) => {
+      // A. YouTube Item
       if (item.isYouTube) {
         const showVideo = (currentCategory === 'all' || currentCategory === 'video') && item.videos.length > 0;
         const showAudio = (currentCategory === 'all' || currentCategory === 'audio') && item.audios.length > 0;
         const showSub = (currentCategory === 'all' || currentCategory === 'document') && item.subtitles.length > 0;
 
         if (!showVideo && !showAudio && !showSub) return;
-
         renderedCount++;
+
         const card = document.createElement('div');
         card.className = 'yt-master-card';
 
@@ -297,9 +384,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="media-details">
               <span class="media-title" title="${item.title}">${item.title}</span>
               <div class="media-tags">
-                <span class="badge badge-video">YOUTUBE MEDIA</span>
-                <span class="badge badge-audio">${item.videos.length} ĐỘ PHÂN GIẢI</span>
-                ${item.subtitles.length > 0 ? `<span class="badge badge-doc">${item.subtitles.length} PHỤ ĐỀ</span>` : ''}
+                <span class="badge badge-video">YOUTUBE</span>
+                ${item.videos.length > 0 ? `<span class="badge badge-video">${item.videos.length} VIDEO</span>` : ''}
+                ${item.audios.length > 0 ? `<span class="badge badge-audio">${item.audios.length} AUDIO</span>` : ''}
               </div>
             </div>
           </div>
@@ -363,9 +450,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
+      // B. Media thông thường (Audio / Video / Canvas PDF)
       if (currentCategory !== 'all' && item.category !== currentCategory) return;
-
       renderedCount++;
+
       const card = document.createElement('div');
       card.className = 'media-card';
 
@@ -404,7 +492,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const btnDlNormal = card.querySelector('.btn-dl-normal');
       btnDlNormal.addEventListener('click', () => {
         if (isCanvasPdf) {
-          btnScanCanvas.click();
+          const btnScan = document.querySelector('#btnScanCanvas');
+          if (btnScan) btnScan.click();
         } else {
           executeSecureDownload(item, btnDlNormal);
         }
@@ -420,7 +509,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       mediaContainer.appendChild(card);
     });
 
-    if (renderedCount === 0 && !vipPlatform) {
+    if (renderedCount === 0 && currentCategory !== 'document') {
+      mediaContainer.appendChild(emptyState);
       emptyState.style.display = 'flex';
     }
   }
@@ -495,110 +585,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 1. MỞ MỜ & BẺ KHÓA NỘI DUNG
-  btnUnblurDoc.addEventListener('click', async () => {
-    if (!currentTab) return;
-    const oldHtml = btnUnblurDoc.innerHTML;
-    btnUnblurDoc.innerHTML = `<span>⏳ Đang mở khóa...</span>`;
-
-    try {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: currentTab.id },
-        func: () => {
-          let count = 0;
-          document.querySelectorAll('*').forEach(el => {
-            const s = window.getComputedStyle(el);
-            if (s.filter && s.filter.includes('blur')) {
-              el.style.setProperty('filter', 'none', 'important');
-              el.style.setProperty('-webkit-filter', 'none', 'important');
-              count++;
-            }
-            if (s.userSelect === 'none') {
-              el.style.setProperty('user-select', 'text', 'important');
-            }
-          });
-          const paywalls = document.querySelectorAll('[class*="paywall"], [class*="overlay"], [class*="modal-backdrop"], [id*="paywall"]');
-          paywalls.forEach(p => {
-            p.style.setProperty('display', 'none', 'important');
-            count++;
-          });
-          document.body.style.setProperty('overflow', 'auto', 'important');
-          return count;
-        }
-      });
-
-      const unblurredCount = results && results[0] ? results[0].result : 0;
-      btnUnblurDoc.innerHTML = `<span>✓ Đã mở ${unblurredCount || ''} vị trí!</span>`;
-      setTimeout(() => {
-        btnUnblurDoc.innerHTML = oldHtml;
-        btnScanCanvas.click();
-      }, 1500);
-    } catch (e) {
-      btnUnblurDoc.innerHTML = `<span>Lỗi mở mờ</span>`;
-      setTimeout(() => { btnUnblurDoc.innerHTML = oldHtml; }, 2000);
-    }
-  });
-
-  // 2. QUÉT CANVAS VÀ XUẤT PDF
-  btnScanCanvas.addEventListener('click', async () => {
-    if (!currentTab) return;
-
-    const oldHtml = btnScanCanvas.innerHTML;
-    btnScanCanvas.innerHTML = `<span>⏳ Đang quét trang...</span>`;
-
-    try {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: currentTab.id },
-        func: () => {
-          const pages = [];
-          const canvases = document.querySelectorAll('canvas');
-          canvases.forEach((c, idx) => {
-            if (c.width > 150 && c.height > 150) {
-              try {
-                pages.push({
-                  pageNumber: idx + 1,
-                  width: c.width,
-                  height: c.height,
-                  dataUrl: c.toDataURL('image/jpeg', 0.95)
-                });
-              } catch (e) {}
-            }
-          });
-          return { pages, title: document.title };
-        }
-      });
-
-      const extracted = results && results[0] ? results[0].result : null;
-
-      if (extracted && extracted.pages && extracted.pages.length > 0) {
-        btnScanCanvas.innerHTML = `<span>⏳ Đang tạo PDF (${extracted.pages.length} trang)...</span>`;
-
-        const pdfBlob = createPdfFromImages(extracted.pages);
-        if (pdfBlob) {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const cleanTitle = (extracted.title || 'Tai_Lieu_Hoc_Tap').replace(/[\\/:*?"<>|]/g, '_').trim();
-            chrome.runtime.sendMessage({
-              action: 'DOWNLOAD_DIRECT',
-              url: reader.result,
-              filename: `${cleanTitle}.pdf`
-            }, () => {
-              btnScanCanvas.innerHTML = `<span>✓ Đã xuất PDF (${extracted.pages.length} trang)!</span>`;
-              setTimeout(() => { btnScanCanvas.innerHTML = oldHtml; }, 3000);
-            });
-          };
-          reader.readAsDataURL(pdfBlob);
-        }
-      } else {
-        btnScanCanvas.innerHTML = `<span>Không tìm thấy Canvas</span>`;
-        setTimeout(() => { btnScanCanvas.innerHTML = oldHtml; }, 3000);
-      }
-    } catch (err) {
-      btnScanCanvas.innerHTML = `<span>Lỗi quyền truy cập</span>`;
-      setTimeout(() => { btnScanCanvas.innerHTML = oldHtml; }, 3000);
-    }
-  });
-
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       tabButtons.forEach(b => b.classList.remove('active'));
@@ -606,15 +592,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentCategory = btn.dataset.category;
       renderMedia();
     });
-  });
-
-  btnScanAudio.addEventListener('click', async () => {
-    if (!currentTab) return;
-    chrome.tabs.sendMessage(currentTab.id, { action: 'SCAN_DOM_NOW' }, () => {
-      setTimeout(loadMedia, 400);
-    });
-    const audioTab = document.querySelector('.tab-btn[data-category="audio"]');
-    if (audioTab) audioTab.click();
   });
 
   btnRefresh.addEventListener('click', () => {
