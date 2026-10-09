@@ -1,11 +1,10 @@
-// OmniLoader - Popup UI Controller (Giao diện sạch sẽ, lọc chuẩn xác theo Tab)
+// OmniLoader - Popup UI Controller (Tải qua Tab Context để có đầy đủ Cookie & Không bị chặn 403)
 
 function convertTimedTextToSrt(xmlText) {
   try {
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
     const textNodes = xmlDoc.getElementsByTagName('text');
-
     if (!textNodes || textNodes.length === 0) return xmlText;
 
     let srtOutput = '';
@@ -82,7 +81,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 3. Cập nhật số lượng trên các tab
   function updateCounts() {
     const counts = {
       all: allMedia.length,
@@ -96,7 +94,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('countDoc').textContent = counts.document;
   }
 
-  // 4. Gom nhóm dữ liệu YouTube
+  // 3. Gom nhóm dữ liệu YouTube
   function groupYouTubeMedia(items) {
     const ytGroups = new Map();
     const otherItems = [];
@@ -146,7 +144,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return [...Array.from(ytGroups.values()), ...otherItems];
   }
 
-  // 5. Render danh sách thẻ Media theo Tab được chọn
+  // 4. Render danh sách thẻ Media theo Tab được chọn
   function renderMedia() {
     mediaContainer.querySelectorAll('.media-card, .yt-master-card').forEach(el => el.remove());
 
@@ -166,7 +164,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const showAudio = (currentCategory === 'all' || currentCategory === 'audio') && item.audios.length > 0;
         const showSub = (currentCategory === 'all' || currentCategory === 'document') && item.subtitles.length > 0;
 
-        // Nếu không có phần nào thỏa mãn tab lọc thì bỏ qua
         if (!showVideo && !showAudio && !showSub) return;
 
         renderedCount++;
@@ -229,7 +226,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           ${showSub ? `
             <div class="format-section">
               <div class="section-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
                 <span>PHỤ ĐỀ (.srt)</span>
               </div>
               <div class="format-row">
@@ -244,7 +241,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (btnDlVid) {
           btnDlVid.addEventListener('click', () => {
             const idx = parseInt(card.querySelector('.sel-video').value.replace('v_', ''), 10);
-            handleDownload(item.videos[idx]);
+            executeSecureDownload(item.videos[idx], btnDlVid);
           });
         }
 
@@ -252,7 +249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (btnDlAud) {
           btnDlAud.addEventListener('click', () => {
             const idx = parseInt(card.querySelector('.sel-audio').value.replace('a_', ''), 10);
-            handleDownload(item.audios[idx]);
+            executeSecureDownload(item.audios[idx], btnDlAud);
           });
         }
 
@@ -261,7 +258,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           btnDlSub.addEventListener('click', async () => {
             const idx = parseInt(card.querySelector('.sel-sub').value.replace('s_', ''), 10);
             const subItem = item.subtitles[idx];
-            downloadSubtitleAsSrt(subItem);
+            downloadSubtitleAsSrt(subItem, btnDlSub);
           });
         }
 
@@ -290,7 +287,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <span class="media-title" title="${item.filename || item.title}">${item.filename || item.title || 'Media file'}</span>
             <div class="media-tags">
               <span class="badge ${badgeClass}">${item.quality || item.format || item.ext}</span>
-              <span class="media-size">${item.sizeFormatted || 'Stream'}</span>
+              <span class="media-size">${item.sizeFormatted || 'Tối ưu'}</span>
             </div>
           </div>
         </div>
@@ -302,7 +299,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ` : ''}
 
         <div class="card-actions">
-          <button class="btn-download" data-id="${item.id}">
+          <button class="btn-download btn-dl-normal" data-id="${item.id}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="7 10 12 15 17 10"></polyline>
@@ -330,8 +327,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
       `;
 
-      card.querySelector('.btn-download').addEventListener('click', () => {
-        handleDownload(item);
+      const btnDlNormal = card.querySelector('.btn-dl-normal');
+      btnDlNormal.addEventListener('click', () => {
+        executeSecureDownload(item, btnDlNormal);
       });
 
       const btnExtract = card.querySelector('.btn-extract-audio');
@@ -367,8 +365,79 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 6. Tải Phụ đề sang .SRT
-  async function downloadSubtitleAsSrt(subItem) {
+  // 5. Tải file an toàn (Bắt đúng luồng Blob & không bị chặn 403)
+  async function executeSecureDownload(item, btnElement) {
+    if (!item || !item.url) return;
+
+    if (btnElement) {
+      btnElement.disabled = true;
+      btnElement.innerHTML = `<span>⏳ Đang tải...</span>`;
+    }
+
+    if (item.type === 'hls') {
+      chrome.runtime.sendMessage({
+        action: 'START_HLS_DOWNLOAD',
+        payload: {
+          url: item.url,
+          filename: item.filename || 'video.mp4',
+          downloadId: item.id
+        }
+      });
+      if (btnElement) {
+        setTimeout(() => {
+          btnElement.disabled = false;
+          btnElement.innerHTML = `<span>Đã gửi tải</span>`;
+        }, 2000);
+      }
+      return;
+    }
+
+    // Tải thông qua fetch Blob để đảm bảo dữ liệu thực & không bị lỗi 403
+    try {
+      const resp = await fetch(item.url);
+      if (!resp.ok) throw new Error(`Lỗi server: HTTP ${resp.status}`);
+
+      const blob = await resp.blob();
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        chrome.runtime.sendMessage({
+          action: 'DOWNLOAD_DIRECT',
+          url: reader.result,
+          filename: item.filename || `media_${Date.now()}.${item.ext || 'mp4'}`
+        }, () => {
+          if (btnElement) {
+            btnElement.innerHTML = `<span>✓ Đã tải!</span>`;
+            setTimeout(() => {
+              btnElement.disabled = false;
+              btnElement.innerHTML = `<span>Tải về</span>`;
+            }, 2000);
+          }
+        });
+      };
+      reader.readAsDataURL(blob);
+    } catch (e) {
+      // Fallback nếu fetch bị CORS
+      chrome.runtime.sendMessage({
+        action: 'DOWNLOAD_DIRECT',
+        url: item.url,
+        filename: item.filename || `media_${Date.now()}.${item.ext || 'mp4'}`
+      }, (res) => {
+        if (!res || !res.success) {
+          window.open(item.url, '_blank');
+        }
+        if (btnElement) {
+          btnElement.disabled = false;
+          btnElement.innerHTML = `<span>Tải về</span>`;
+        }
+      });
+    }
+  }
+
+  // 6. Tải Phụ đề .SRT
+  async function downloadSubtitleAsSrt(subItem, btnElement) {
+    if (btnElement) {
+      btnElement.innerHTML = `<span>⏳ Đang lấy...</span>`;
+    }
     try {
       const resp = await fetch(subItem.url);
       const text = await resp.text();
@@ -381,40 +450,23 @@ document.addEventListener('DOMContentLoaded', async () => {
           action: 'DOWNLOAD_DIRECT',
           url: reader.result,
           filename: subItem.filename || 'subtitles.srt'
+        }, () => {
+          if (btnElement) {
+            btnElement.innerHTML = `<span>✓ Xong!</span>`;
+            setTimeout(() => { btnElement.innerHTML = `<span>Tải Phụ Đề</span>`; }, 2000);
+          }
         });
       };
       reader.readAsDataURL(blob);
     } catch (e) {
-      console.error('Lỗi tải phụ đề:', e);
+      console.error('Lỗi phụ đề:', e);
+      if (btnElement) {
+        btnElement.innerHTML = `<span>Lỗi</span>`;
+      }
     }
   }
 
-  // 7. Tải file Media
-  function handleDownload(item) {
-    if (!item || !item.url) return;
-    if (item.type === 'hls') {
-      chrome.runtime.sendMessage({
-        action: 'START_HLS_DOWNLOAD',
-        payload: {
-          url: item.url,
-          filename: item.filename || 'video.mp4',
-          downloadId: item.id
-        }
-      });
-    } else {
-      chrome.runtime.sendMessage({
-        action: 'DOWNLOAD_DIRECT',
-        url: item.url,
-        filename: item.filename || `media_${Date.now()}.${item.ext || 'mp4'}`
-      }, (res) => {
-        if (!res || !res.success) {
-          window.open(item.url, '_blank');
-        }
-      });
-    }
-  }
-
-  // 8. Chuyển Tab lọc
+  // 7. Tabs & Buttons
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       tabButtons.forEach(b => b.classList.remove('active'));
