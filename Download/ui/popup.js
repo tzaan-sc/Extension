@@ -1,4 +1,4 @@
-// OmniLoader - Popup UI Controller (Bao gồm Mở Mờ Tài Liệu & Tải Full File)
+// OmniLoader - Popup UI Controller (Đầy đủ Video, Audio, Phụ đề, Canvas PDF và 1-Click Get-Link VIP)
 
 function convertTimedTextToSrt(xmlText) {
   try {
@@ -110,6 +110,28 @@ function createPdfFromImages(images) {
   return new Blob([buffer], { type: 'application/pdf' });
 }
 
+// Nhận diện nền tảng tài liệu hỗ trợ Get-Link VIP
+function detectVipDocPlatform(url) {
+  if (!url) return null;
+  const u = url.toLowerCase();
+  if (u.includes('scribd.com/document') || u.includes('scribd.com/doc') || u.includes('scribd.com/presentation')) {
+    return { name: 'Scribd Document', getUrl: (target) => `https://downscribd.com/?url=${encodeURIComponent(target)}` };
+  }
+  if (u.includes('studocu.com') && u.includes('/document/')) {
+    return { name: 'Studocu Document', getUrl: (target) => `https://studocudownloader.com/?url=${encodeURIComponent(target)}` };
+  }
+  if (u.includes('slideshare.net/')) {
+    return { name: 'SlideShare Presentation', getUrl: (target) => `https://docdownloader.com/?slideshare=${encodeURIComponent(target)}` };
+  }
+  if (u.includes('issuu.com/')) {
+    return { name: 'Issuu Publication', getUrl: (target) => `https://docdownloader.com/?issuu=${encodeURIComponent(target)}` };
+  }
+  if (u.includes('academia.edu/')) {
+    return { name: 'Academia Research', getUrl: (target) => `https://docdownloader.com/?academia=${encodeURIComponent(target)}` };
+  }
+  return null;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   let currentTab = null;
   let allMedia = [];
@@ -214,9 +236,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function renderMedia() {
-    mediaContainer.querySelectorAll('.media-card, .yt-master-card').forEach(el => el.remove());
+    mediaContainer.querySelectorAll('.media-card, .yt-master-card, .vip-doc-card').forEach(el => el.remove());
 
-    if (allMedia.length === 0) {
+    // 1. Kiểm tra nếu là trang web tài liệu VIP (Scribd, Studocu, SlideShare...)
+    const vipPlatform = currentTab ? detectVipDocPlatform(currentTab.url) : null;
+    if (vipPlatform && (currentCategory === 'all' || currentCategory === 'document')) {
+      const vipCard = document.createElement('div');
+      vipCard.className = 'vip-doc-card';
+      vipCard.innerHTML = `
+        <div class="vip-header">
+          <span class="badge badge-doc">⚡ GET-LINK VIP</span>
+          <span class="vip-platform">${vipPlatform.name}</span>
+        </div>
+        <div class="vip-body">
+          <p>Phát hiện tài liệu <b>${vipPlatform.name}</b>. Tải trọn bộ file PDF/DOCX gốc chỉ với 1 click!</p>
+          <button class="btn-download btn-vip-download">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Tải Full File Gốc VIP (1-Click)</span>
+          </button>
+        </div>
+      `;
+      vipCard.querySelector('.btn-vip-download').addEventListener('click', () => {
+        window.open(vipPlatform.getUrl(currentTab.url), '_blank');
+      });
+      mediaContainer.appendChild(vipCard);
+    }
+
+    if (allMedia.length === 0 && !vipPlatform) {
       emptyState.style.display = 'flex';
       return;
     }
@@ -370,7 +420,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       mediaContainer.appendChild(card);
     });
 
-    if (renderedCount === 0) {
+    if (renderedCount === 0 && !vipPlatform) {
       emptyState.style.display = 'flex';
     }
   }
@@ -445,7 +495,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 1. NÚT MỞ MỜ & TỰ ĐỘNG BẺ KHÓA NỘI DUNG ẨN
+  // 1. MỞ MỜ & BẺ KHÓA NỘI DUNG
   btnUnblurDoc.addEventListener('click', async () => {
     if (!currentTab) return;
     const oldHtml = btnUnblurDoc.innerHTML;
@@ -456,7 +506,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         target: { tabId: currentTab.id },
         func: () => {
           let count = 0;
-          // Xóa Filter Blur trên mọi phần tử
           document.querySelectorAll('*').forEach(el => {
             const s = window.getComputedStyle(el);
             if (s.filter && s.filter.includes('blur')) {
@@ -468,7 +517,6 @@ document.addEventListener('DOMContentLoaded', async () => {
               el.style.setProperty('user-select', 'text', 'important');
             }
           });
-          // Xóa Modal / Paywall Overlay
           const paywalls = document.querySelectorAll('[class*="paywall"], [class*="overlay"], [class*="modal-backdrop"], [id*="paywall"]');
           paywalls.forEach(p => {
             p.style.setProperty('display', 'none', 'important');
@@ -483,7 +531,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnUnblurDoc.innerHTML = `<span>✓ Đã mở ${unblurredCount || ''} vị trí!</span>`;
       setTimeout(() => {
         btnUnblurDoc.innerHTML = oldHtml;
-        btnScanCanvas.click(); // Tự động quét xuất PDF sau khi mở mờ
+        btnScanCanvas.click();
       }, 1500);
     } catch (e) {
       btnUnblurDoc.innerHTML = `<span>Lỗi mở mờ</span>`;
@@ -491,7 +539,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 2. NÚT TẢI TÀI LIỆU XUẤT PDF TRỰC TIẾP
+  // 2. QUÉT CANVAS VÀ XUẤT PDF
   btnScanCanvas.addEventListener('click', async () => {
     if (!currentTab) return;
 
