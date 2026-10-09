@@ -1,4 +1,4 @@
-// OmniLoader - Popup UI Controller (Tải qua Tab Context để có đầy đủ Cookie & Không bị chặn 403)
+// OmniLoader - Popup UI Controller (Hoàn thiện toàn bộ Video, Audio, Phụ đề và Xuất PDF Tài Liệu)
 
 function convertTimedTextToSrt(xmlText) {
   try {
@@ -226,7 +226,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           ${showSub ? `
             <div class="format-section">
               <div class="section-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
                 <span>PHỤ ĐỀ (.srt)</span>
               </div>
               <div class="format-row">
@@ -365,7 +365,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 5. Tải file an toàn (Bắt đúng luồng Blob & không bị chặn 403)
+  // 5. Tải file an toàn
   async function executeSecureDownload(item, btnElement) {
     if (!item || !item.url) return;
 
@@ -392,10 +392,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Tải thông qua fetch Blob để đảm bảo dữ liệu thực & không bị lỗi 403
     try {
       const resp = await fetch(item.url);
-      if (!resp.ok) throw new Error(`Lỗi server: HTTP ${resp.status}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
       const blob = await resp.blob();
       const reader = new FileReader();
@@ -416,7 +415,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       };
       reader.readAsDataURL(blob);
     } catch (e) {
-      // Fallback nếu fetch bị CORS
       chrome.runtime.sendMessage({
         action: 'DOWNLOAD_DIRECT',
         url: item.url,
@@ -466,7 +464,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 7. Tabs & Buttons
+  // 7. Nút Cào tài liệu xuất PDF
+  btnScanCanvas.addEventListener('click', () => {
+    if (!currentTab) return;
+
+    const oldHtml = btnScanCanvas.innerHTML;
+    btnScanCanvas.innerHTML = `<span>⏳ Đang quét PDF...</span>`;
+
+    chrome.tabs.sendMessage(currentTab.id, { action: 'EXPORT_DOCUMENT_PDF' }, (res) => {
+      if (res && res.success) {
+        btnScanCanvas.innerHTML = `<span>✓ Đã xuất PDF!</span>`;
+        setTimeout(() => { btnScanCanvas.innerHTML = oldHtml; }, 3000);
+      } else {
+        btnScanCanvas.innerHTML = `<span>${res?.error ? 'Không tìm thấy' : 'Thất bại'}</span>`;
+        setTimeout(() => { btnScanCanvas.innerHTML = oldHtml; }, 3000);
+      }
+    });
+  });
+
+  // 8. Chuyển Tab lọc
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       tabButtons.forEach(b => b.classList.remove('active'));

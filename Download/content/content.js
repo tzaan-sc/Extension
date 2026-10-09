@@ -1,8 +1,9 @@
-// OmniLoader - Content Script (Bóc tách chuẩn xác Video / Audio / Phụ đề)
+// OmniLoader - Content Script (Classic Script, KHÔNG dùng import để chạy 100% mượt mà trên mọi trang)
 
 (function () {
   'use strict';
 
+  // 1. Inject Main World Script
   function injectMainWorldScript() {
     try {
       const script = document.createElement('script');
@@ -13,6 +14,7 @@
   }
   injectMainWorldScript();
 
+  // 2. Lắng nghe thông điệp từ Injected Script
   window.addEventListener('message', (event) => {
     if (event.source !== window || !event.data || !event.data.type) return;
 
@@ -48,7 +50,6 @@
     const thumbnail = videoDetails?.thumbnail?.thumbnails?.slice(-1)[0]?.url || '';
     const batchItems = [];
 
-    // 1. Phân tích Formats (360p / 720p Video + Audio hoàn chỉnh)
     if (streamingData.formats) {
       streamingData.formats.forEach((fmt) => {
         const directUrl = fmt.url || extractCipherUrl(fmt);
@@ -75,7 +76,6 @@
       });
     }
 
-    // 2. Phân tích Adaptive Formats (1080p, 720p, 480p, 240p, 144p & Audio)
     if (streamingData.adaptiveFormats) {
       streamingData.adaptiveFormats.forEach((fmt) => {
         const directUrl = fmt.url || extractCipherUrl(fmt);
@@ -123,7 +123,6 @@
       });
     }
 
-    // 3. Phân tích Phụ đề
     if (captionTracks && captionTracks.length > 0) {
       captionTracks.forEach((cap, idx) => {
         if (cap.baseUrl) {
@@ -177,8 +176,8 @@
     }
   }
 
+  // 3. Quét Media DOM
   function scanDOMMedia() {
-    // Bỏ qua quét DOM video trên YouTube vì YouTube đã có bộ bóc tách riêng sạch sẽ
     if (window.location.hostname.includes('youtube.com')) return;
 
     const batch = [];
@@ -222,12 +221,47 @@
       }
     });
 
+    document.querySelectorAll('embed[type="application/pdf"], iframe[src*=".pdf"], a[href$=".pdf"]').forEach((el, idx) => {
+      const src = el.src || el.href;
+      if (src && !src.startsWith('blob:')) {
+        batch.push({
+          id: `dom_doc_${idx}_${src.substring(0, 30)}`,
+          url: src,
+          filename: `${sanitizeFilename(document.title)}.pdf`,
+          type: 'document',
+          category: 'document',
+          ext: 'pdf',
+          format: 'Tài liệu PDF',
+          source: 'dom'
+        });
+      }
+    });
+
     if (batch.length > 0) {
       chrome.runtime.sendMessage({
         action: 'ADD_BATCH_MEDIA',
         items: batch
       });
     }
+  }
+
+  // 4. Trích xuất trang Canvas để tạo PDF (Thuần JS không dính lỗi Module)
+  function extractCanvasImages() {
+    const pages = [];
+    const canvases = document.querySelectorAll('canvas');
+    canvases.forEach((canvas, idx) => {
+      if (canvas.width < 200 || canvas.height < 200) return;
+      try {
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        pages.push({
+          pageNumber: idx + 1,
+          width: canvas.width,
+          height: canvas.height,
+          dataUrl: dataUrl
+        });
+      } catch (e) {}
+    });
+    return pages;
   }
 
   function reportSingleMedia(item) {
@@ -247,6 +281,12 @@
   }
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'EXTRACT_CANVAS_PAGES') {
+      const pages = extractCanvasImages();
+      sendResponse({ success: true, pages: pages, title: document.title });
+      return true;
+    }
+
     if (request.action === 'SCAN_DOM_NOW') {
       scanDOMMedia();
       sendResponse({ success: true });

@@ -1,54 +1,113 @@
-// OmniLoader - Canvas & Study Materials Extractor
-// Quét các web học liệu (Scribd, Studocu, Canvas LMS, SlideShare, PDF Viewer nhúng)
+// OmniLoader - Advanced Document & PDF Extractor
+// Quét, kích hoạt Lazy Load và đóng gói tài liệu thành file PDF hoàn chỉnh
 
-export class CanvasExtractor {
-  // Quét toàn bộ thẻ canvas trên trang
-  static scanCanvases() {
+import { createPdfFromImages } from './pdf_builder.js';
+
+export class DocumentExtractor {
+  // 1. Quét tìm tài liệu dạng file PDF gốc nhúng
+  static findDirectPdf() {
+    const embeds = document.querySelectorAll('embed[type="application/pdf"], iframe[src*=".pdf"], a[href$=".pdf"]');
+    for (const el of embeds) {
+      const src = el.src || el.href;
+      if (src && !src.startsWith('blob:')) {
+        return src;
+      }
+    }
+    return null;
+  }
+
+  // 2. Tự động cuộn trang để kích hoạt Lazy-load tất cả các trang bị ẩn
+  static async autoScrollToLoadAllPages(onProgress) {
+    const scrollHeight = Math.max(
+      document.body.scrollHeight,
+      document.documentElement.scrollHeight,
+      5000
+    );
+
+    const step = window.innerHeight * 0.7;
+    let currentY = 0;
+
+    while (currentY < scrollHeight) {
+      window.scrollTo(0, currentY);
+      currentY += step;
+
+      if (onProgress) {
+        onProgress(Math.min(90, Math.round((currentY / scrollHeight) * 100)));
+      }
+      await new Promise(r => setTimeout(r, 250)); // Đợi 250ms cho trang render
+    }
+
+    // Cuộn ngược lên đầu trang
+    window.scrollTo(0, 0);
+    await new Promise(r => setTimeout(r, 400));
+  }
+
+  // 3. Trích xuất tất cả các trang tài liệu (Canvas & Images)
+  static extractAllPages() {
+    const pages = [];
+    const seen = new Set();
+
+    // A. Quét các thẻ Canvas (Scribd, Studocu, PDF.js...)
     const canvases = document.querySelectorAll('canvas');
-    const results = [];
-
-    canvases.forEach((canvas, index) => {
-      // Bỏ qua canvas quá nhỏ (như icon hoặc hiệu ứng nền)
-      if (canvas.width < 300 || canvas.height < 300) return;
-
+    canvases.forEach((canvas, idx) => {
+      if (canvas.width < 250 || canvas.height < 250) return;
       try {
         const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-        results.push({
-          pageNumber: index + 1,
-          width: canvas.width,
-          height: canvas.height,
-          dataUrl: dataUrl
-        });
+        if (!seen.has(dataUrl)) {
+          seen.add(dataUrl);
+          pages.push({
+            pageNumber: idx + 1,
+            width: canvas.width,
+            height: canvas.height,
+            dataUrl: dataUrl
+          });
+        }
       } catch (e) {
-        // Bị dính CORS canvas taint
+        // Bị dính CORS canvas
       }
     });
 
-    return results;
-  }
-
-  // Tự động cuộn trang để kích hoạt Lazy Load tất cả các trang tài liệu
-  static async autoScrollAndCapture(progressCallback) {
-    const scrollContainer = document.querySelector('.document-viewer') || 
-                            document.querySelector('.viewer-container') || 
-                            document.querySelector('.page-container') || 
-                            document.documentElement;
-
-    const totalHeight = scrollContainer.scrollHeight;
-    const step = window.innerHeight * 0.8;
-    let currentScroll = 0;
-
-    while (currentScroll < totalHeight) {
-      scrollContainer.scrollTop = currentScroll;
-      window.scrollTo(0, currentScroll);
-      await new Promise(r => setTimeout(r, 600)); // Đợi trang render
-      currentScroll += step;
-      if (progressCallback) {
-        progressCallback(Math.min(100, Math.round((currentScroll / totalHeight) * 100)));
-      }
+    // B. Quét các thẻ Image của trang tài liệu (SlideShare, Google Doc Pages...)
+    if (pages.length === 0) {
+      const pageImages = document.querySelectorAll('.page img, .page-container img, .doc-page img, img[class*="page"], img[id*="page"]');
+      pageImages.forEach((img, idx) => {
+        const src = img.currentSrc || img.src || img.dataset.src;
+        if (src && (img.naturalWidth > 300 || img.width > 300)) {
+          pages.push({
+            pageNumber: idx + 1,
+            width: img.naturalWidth || 800,
+            height: img.naturalHeight || 1100,
+            url: src
+          });
+        }
+      });
     }
 
-    // Sau khi scroll xong, chụp lại toàn bộ canvas
-    return this.scanCanvases();
+    return pages;
+  }
+
+  // 4. Toàn bộ quy trình: Cuộn -> Quét -> Tạo file PDF hoàn chỉnh
+  static async exportToPdf(filename, onProgress) {
+    // Nếu có file PDF gốc trực tiếp
+    const directPdf = this.findDirectPdf();
+    if (directPdf) {
+      return { type: 'direct', url: directPdf };
+    }
+
+    // Cuộn trang
+    await this.autoScrollToLoadAllPages(onProgress);
+
+    // Trích xuất trang
+    const pages = this.extractAllPages();
+    if (pages.length === 0) {
+      throw new Error('Không tìm thấy trang tài liệu nào trên trang hiện tại.');
+    }
+
+    // Đóng gói PDF
+    if (onProgress) onProgress(95);
+    const pdfBlob = createPdfFromImages(pages);
+    if (!pdfBlob) throw new Error('Không thể tạo file PDF.');
+
+    return { type: 'blob', blob: pdfBlob, pageCount: pages.length };
   }
 }
