@@ -1,38 +1,67 @@
-// OmniLoader - Network & Media Sniffer Module (Persistent Storage & Multi-Quality Keying)
+// OmniLoader - Persistent & Thread-Safe Sniffer Module
 
 export class MediaSniffer {
+  // Bộ nhớ đệm RAM tức thì (tránh Race Condition)
+  static memoryCache = new Map();
+
+  static async initTab(tabId) {
+    if (!tabId || tabId < 0) return;
+    if (!this.memoryCache.has(tabId)) {
+      const key = `media_tab_${tabId}`;
+      const data = await chrome.storage.session.get(key).catch(() => ({}));
+      this.memoryCache.set(tabId, data[key] || []);
+    }
+  }
+
   static async getMedia(tabId) {
     if (!tabId || tabId < 0) return [];
+    if (!this.memoryCache.has(tabId)) {
+      await this.initTab(tabId);
+    }
+    return this.memoryCache.get(tabId) || [];
+  }
+
+  // Thêm hàng loạt Media Item trong 1 thao tác duy nhất (Atomic Batch)
+  static async addMediaBatch(tabId, items) {
+    if (!tabId || tabId < 0 || !items || items.length === 0) return;
+    await this.initTab(tabId);
+
+    const existing = this.memoryCache.get(tabId) || [];
+    const existingMap = new Map();
+    existing.forEach(item => {
+      const k = item.id || (item.url + (item.quality || '') + (item.ext || ''));
+      existingMap.set(k, item);
+    });
+
+    items.forEach(item => {
+      if (!item.url) return;
+      const k = item.id || (item.url + (item.quality || '') + (item.ext || ''));
+      if (!existingMap.has(k)) {
+        existingMap.set(k, {
+          ...item,
+          id: item.id || `item_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          tabId: tabId,
+          sizeFormatted: item.sizeFormatted || this.formatSize(item.size || 0),
+          timestamp: Date.now()
+        });
+      }
+    });
+
+    const updatedList = Array.from(existingMap.values());
+    this.memoryCache.set(tabId, updatedList);
+
     const key = `media_tab_${tabId}`;
-    const data = await chrome.storage.session.get(key).catch(() => ({}));
-    return data[key] || [];
+    await chrome.storage.session.set({ [key]: updatedList }).catch(() => {});
+    return updatedList;
   }
 
   static async addMedia(tabId, item) {
-    if (!tabId || tabId < 0 || !item.url) return null;
-    const key = `media_tab_${tabId}`;
-    const existing = await this.getMedia(tabId);
-
-    // Tạo Unique Key bao gồm cả itag/quality để không bị đè độ phân giải khác nhau
-    const itemKey = item.id || (item.url + (item.quality || '') + (item.format || ''));
-    const itemIndex = existing.findIndex(m => (m.id === item.id) || (m.url === item.url && m.quality === item.quality));
-
-    if (itemIndex >= 0) {
-      if (!existing[itemIndex].size && item.size) {
-        existing[itemIndex].size = item.size;
-        existing[itemIndex].sizeFormatted = item.sizeFormatted;
-        await chrome.storage.session.set({ [key]: existing });
-      }
-      return existing[itemIndex];
-    }
-
-    existing.push(item);
-    await chrome.storage.session.set({ [key]: existing });
-    return item;
+    return this.addMediaBatch(tabId, [item]);
   }
 
   static async clearTab(tabId) {
     if (!tabId || tabId < 0) return;
+    this.memoryCache.delete(tabId);
     const key = `media_tab_${tabId}`;
     await chrome.storage.session.remove(key).catch(() => {});
   }
@@ -52,44 +81,35 @@ export class MediaSniffer {
     if (cleanUrl.endsWith('.wav') || mime.includes('audio/wav') || url.includes('.wav')) {
       return { type: 'audio', category: 'audio', ext: 'wav', format: 'WAV Audio' };
     }
-    if (cleanUrl.endsWith('.ogg') || mime.includes('audio/ogg')) {
-      return { type: 'audio', category: 'audio', ext: 'ogg', format: 'OGG Audio' };
-    }
     if (cleanUrl.endsWith('.aac') || mime.includes('audio/aac')) {
       return { type: 'audio', category: 'audio', ext: 'aac', format: 'AAC Audio' };
     }
     if (mime.startsWith('audio/')) {
-      return { type: 'audio', category: 'audio', ext: 'mp3', format: 'Audio Stream' };
+      return { type: 'audio', category: 'audio', ext: 'mp3', format: 'Audio' };
     }
 
-    // 2. HLS / DASH
+    // 2. Video HLS / DASH
     if (cleanUrl.endsWith('.m3u8') || mime.includes('application/x-mpegurl') || mime.includes('application/vnd.apple.mpegurl') || url.includes('.m3u8')) {
       return { type: 'hls', category: 'video', ext: 'm3u8', format: 'HLS Stream (m3u8)' };
     }
     if (cleanUrl.endsWith('.mpd') || mime.includes('application/dash+xml')) {
-      return { type: 'dash', category: 'video', ext: 'mpd', format: 'DASH Stream (mpd)' };
+      return { type: 'dash', category: 'video', ext: 'mpd', format: 'DASH Stream' };
     }
 
-    // 3. Video
+    // 3. Video Trực tiếp
     if (cleanUrl.endsWith('.mp4') || mime.includes('video/mp4') || url.includes('.mp4')) {
       return { type: 'video', category: 'video', ext: 'mp4', format: 'MP4 Video' };
     }
     if (cleanUrl.endsWith('.webm') || mime.includes('video/webm') || url.includes('.webm')) {
       return { type: 'video', category: 'video', ext: 'webm', format: 'WebM Video' };
     }
-    if (cleanUrl.endsWith('.mkv') || mime.includes('video/x-matroska')) {
-      return { type: 'video', category: 'video', ext: 'mkv', format: 'MKV Video' };
-    }
     if (mime.startsWith('video/')) {
-      return { type: 'video', category: 'video', ext: 'mp4', format: 'Video Stream' };
+      return { type: 'video', category: 'video', ext: 'mp4', format: 'Video' };
     }
 
     // 4. Tài liệu
     if (cleanUrl.endsWith('.pdf') || mime.includes('application/pdf')) {
       return { type: 'document', category: 'document', ext: 'pdf', format: 'PDF Document' };
-    }
-    if (cleanUrl.endsWith('.docx') || cleanUrl.endsWith('.doc')) {
-      return { type: 'document', category: 'document', ext: 'docx', format: 'Word Document' };
     }
 
     return null;
@@ -124,7 +144,7 @@ export class MediaSniffer {
   }
 
   static formatSize(bytes) {
-    if (!bytes || isNaN(bytes) || bytes <= 0) return 'Tự động tối ưu';
+    if (!bytes || isNaN(bytes) || bytes <= 0) return 'Tối ưu';
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;

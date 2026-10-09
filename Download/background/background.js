@@ -63,7 +63,7 @@ chrome.webRequest.onHeadersReceived.addListener(
   ['responseHeaders']
 );
 
-// 2. Dọn dẹp dữ liệu
+// 2. Dọn dẹp dữ liệu khi đóng hoặc reload tab
 chrome.tabs.onRemoved.addListener((tabId) => {
   MediaSniffer.clearTab(tabId);
 });
@@ -90,7 +90,7 @@ async function ensureOffscreenDocument() {
   });
 }
 
-// 4. Xử lý tin nhắn
+// 4. Xử lý tin nhắn (Message Passing)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const tabId = sender.tab ? sender.tab.id : message.tabId;
 
@@ -102,19 +102,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Thêm nhiều media cùng 1 lúc (Tránh race condition)
+  if (message.action === 'ADD_BATCH_MEDIA') {
+    (async () => {
+      if (tabId && message.items && message.items.length > 0) {
+        await MediaSniffer.addMediaBatch(tabId, message.items);
+        await updateBadge(tabId);
+        sendResponse({ success: true });
+      }
+    })();
+    return true;
+  }
+
   if (message.action === 'ADD_CUSTOM_MEDIA') {
     (async () => {
       if (tabId && message.item) {
-        const item = {
-          ...message.item,
-          id: message.item.id || `${tabId}_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-          tabId: tabId,
-          sizeFormatted: message.item.sizeFormatted || MediaSniffer.formatSize(message.item.size || 0),
-          timestamp: Date.now()
-        };
-        await MediaSniffer.addMedia(tabId, item);
+        await MediaSniffer.addMedia(tabId, message.item);
         await updateBadge(tabId);
-        sendResponse({ success: true, item });
+        sendResponse({ success: true });
       }
     })();
     return true;
@@ -143,7 +148,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // Lệnh tách âm thanh từ video
   if (message.action === 'EXTRACT_AUDIO') {
     (async () => {
       try {
@@ -160,7 +164,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // Lệnh tải m3u8
   if (message.action === 'START_HLS_DOWNLOAD') {
     (async () => {
       try {

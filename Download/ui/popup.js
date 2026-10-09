@@ -1,4 +1,6 @@
-// OmniLoader - Popup UI Controller (Sắp xếp độ phân giải từ Cao xuống Thấp)
+// OmniLoader - Popup UI Controller (Hỗ trợ đầy đủ Video 1080p, 720p, 480p, 360p, 240p, 144p, Audio MP3 và Phụ đề SRT)
+
+import { convertTimedTextToSrt } from '../content/subtitle_converter.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   let currentTab = null;
@@ -59,60 +61,65 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('countDoc').textContent = counts.document;
   }
 
-  // 3. Gom nhóm Video đa độ phân giải & sắp xếp từ Cao xuống Thấp
-  function groupMediaItems(items) {
-    const groups = new Map();
-    const singles = [];
+  // 3. Gom nhóm Video YouTube theo cấu trúc chuẩn (Video / Audio / Phụ đề)
+  function groupYouTubeMedia(items) {
+    const ytGroups = new Map();
+    const otherItems = [];
 
     items.forEach((item) => {
       if (item.source === 'youtube' && item.title) {
         const key = item.title;
-        if (!groups.has(key)) {
-          groups.set(key, {
+        if (!ytGroups.has(key)) {
+          ytGroups.set(key, {
             id: item.id,
-            isGroup: true,
+            isYouTube: true,
             title: item.title,
             thumbnail: item.thumbnail,
-            category: 'video',
-            formats: []
+            videos: [],
+            audios: [],
+            subtitles: []
           });
         }
-        groups.get(key).formats.push(item);
+
+        const group = ytGroups.get(key);
+        if (item.type === 'subtitle') {
+          // Tránh trùng ngôn ngữ phụ đề
+          if (!group.subtitles.some(s => s.quality === item.quality)) {
+            group.subtitles.push(item);
+          }
+        } else if (item.category === 'audio') {
+          if (!group.audios.some(a => a.quality === item.quality)) {
+            group.audios.push(item);
+          }
+        } else {
+          if (!group.videos.some(v => v.resolution === item.resolution)) {
+            group.videos.push(item);
+          }
+        }
       } else {
-        singles.push(item);
+        otherItems.push(item);
       }
     });
 
-    // Sắp xếp các format: 4K -> 1080p -> 720p -> 480p -> 360p -> Audio
-    for (const group of groups.values()) {
-      group.formats.sort((a, b) => {
-        const getRank = (f) => {
-          const q = (f.quality || '').toLowerCase();
-          if (q.includes('4k') || q.includes('2160')) return 100;
-          if (q.includes('2k') || q.includes('1440')) return 90;
-          if (q.includes('1080')) return 80;
-          if (q.includes('720')) return 70;
-          if (q.includes('480')) return 60;
-          if (q.includes('360')) return 50;
-          if (q.includes('240')) return 40;
-          if (q.includes('144')) return 30;
-          if (f.category === 'audio') return 10;
-          return 20;
-        };
-        return getRank(b) - getRank(a);
+    // Sắp xếp độ phân giải Video từ Cao xuống Thấp (4K -> 1080p -> 720p -> 480p -> 360p -> 240p -> 144p)
+    for (const group of ytGroups.values()) {
+      group.videos.sort((a, b) => {
+        const hA = parseInt(a.resolution, 10) || 0;
+        const hB = parseInt(b.resolution, 10) || 0;
+        return hB - hA;
       });
     }
 
-    return [...Array.from(groups.values()), ...singles];
+    return [...Array.from(ytGroups.values()), ...otherItems];
   }
 
-  // 4. Render danh sách Media
+  // 4. Render danh sách Media Cards
   function renderMedia() {
     const filtered = currentCategory === 'all'
       ? allMedia
-      : allMedia.filter(m => m.category === currentCategory);
+      : allMedia.filter(m => m.category === currentCategory || (currentCategory === 'document' && m.type === 'subtitle'));
 
-    mediaContainer.querySelectorAll('.media-card').forEach(el => el.remove());
+    mediaContainer.querySelectorAll('.media-card, .yt-master-card').forEach(el => el.remove());
 
     if (filtered.length === 0) {
       emptyState.style.display = 'flex';
@@ -120,17 +127,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     emptyState.style.display = 'none';
-    const displayList = groupMediaItems(filtered);
+    const displayList = groupYouTubeMedia(filtered);
 
     displayList.forEach((item) => {
-      const card = document.createElement('div');
-      card.className = 'media-card';
+      // A. Giao diện YouTube Master Card Đầy đủ (Video / Audio / Phụ đề)
+      if (item.isYouTube) {
+        const card = document.createElement('div');
+        card.className = 'yt-master-card';
 
-      // A. Thẻ Video có nhiều độ phân giải (YouTube / Multi-Format)
-      if (item.isGroup && item.formats?.length > 0) {
-        const optionsHtml = item.formats.map((f, i) => `
-          <option value="${i}">
-            ${f.quality || f.format || f.ext} [${f.sizeFormatted || 'Tự động'}]
+        let videoOptions = item.videos.map((v, i) => `
+          <option value="v_${i}">
+            ${v.quality || v.resolution} (.mp4)
+          </option>
+        `).join('');
+
+        let audioOptions = item.audios.map((a, i) => `
+          <option value="a_${i}">
+            ${a.quality} (.mp3)
+          </option>
+        `).join('');
+
+        let subOptions = item.subtitles.map((s, i) => `
+          <option value="s_${i}">
+            ${s.quality} (.srt)
           </option>
         `).join('');
 
@@ -142,53 +161,104 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="media-details">
               <span class="media-title" title="${item.title}">${item.title}</span>
               <div class="media-tags">
-                <span class="badge badge-video">YOUTUBE VIDEO</span>
-                <span class="badge badge-audio">${item.formats.length} ĐỘ PHÂN GIẢI</span>
+                <span class="badge badge-video">YOUTUBE MEDIA</span>
+                <span class="badge badge-audio">${item.videos.length} VIDEO</span>
+                ${item.subtitles.length > 0 ? `<span class="badge badge-doc">${item.subtitles.length} PHỤ ĐỀ</span>` : ''}
               </div>
             </div>
           </div>
 
-          <div class="res-selector-box">
-            <label class="res-label">Chọn độ phân giải (4K / 1080p / 720p / 360p / MP3):</label>
-            <select class="res-select">
-              ${optionsHtml}
-            </select>
-          </div>
+          <!-- Nhóm Video -->
+          ${item.videos.length > 0 ? `
+            <div class="format-section">
+              <div class="section-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>ĐỘ PHÂN GIẢI VIDEO (.mp4)</span>
+              </div>
+              <div class="format-row">
+                <select class="res-select sel-video">
+                  ${videoOptions}
+                </select>
+                <button class="btn-download btn-dl-video">
+                  <span>Tải Video</span>
+                </button>
+              </div>
+            </div>
+          ` : ''}
 
-          <div class="card-actions">
-            <button class="btn-download btn-dl-group">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              <span>Tải bản đã chọn</span>
-            </button>
-            <button class="btn-extract-audio btn-group-audio" title="Tải nhanh file âm thanh M4A/MP3">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>
-              </svg>
-              <span>Lấy MP3</span>
-            </button>
-          </div>
+          <!-- Nhóm Âm thanh -->
+          ${item.audios.length > 0 ? `
+            <div class="format-section">
+              <div class="section-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+                <span>ÂM THANH (.mp3)</span>
+              </div>
+              <div class="format-row">
+                <select class="res-select sel-audio">
+                  ${audioOptions}
+                </select>
+                <button class="btn-download btn-dl-audio">
+                  <span>Tải MP3</span>
+                </button>
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Nhóm Phụ đề -->
+          ${item.subtitles.length > 0 ? `
+            <div class="format-section">
+              <div class="section-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
+                <span>PHỤ ĐỀ (.srt)</span>
+              </div>
+              <div class="format-row">
+                <select class="res-select sel-sub">
+                  ${subOptions}
+                </select>
+                <button class="btn-download btn-dl-sub">
+                  <span>Tải Phụ Đề</span>
+                </button>
+              </div>
+            </div>
+          ` : ''}
         `;
 
-        card.querySelector('.btn-dl-group').addEventListener('click', () => {
-          const select = card.querySelector('.res-select');
-          const chosenFormat = item.formats[parseInt(select.value, 10) || 0];
-          handleDownload(chosenFormat);
-        });
+        // Tải Video
+        const btnDlVid = card.querySelector('.btn-dl-video');
+        if (btnDlVid) {
+          btnDlVid.addEventListener('click', () => {
+            const idx = parseInt(card.querySelector('.sel-video').value.replace('v_', ''), 10);
+            handleDownload(item.videos[idx]);
+          });
+        }
 
-        card.querySelector('.btn-group-audio').addEventListener('click', () => {
-          const audioFmt = item.formats.find(f => f.category === 'audio') || item.formats[item.formats.length - 1];
-          handleDownload(audioFmt);
-        });
+        // Tải Audio
+        const btnDlAud = card.querySelector('.btn-dl-audio');
+        if (btnDlAud) {
+          btnDlAud.addEventListener('click', () => {
+            const idx = parseInt(card.querySelector('.sel-audio').value.replace('a_', ''), 10);
+            handleDownload(item.audios[idx]);
+          });
+        }
+
+        // Tải Phụ đề .SRT
+        const btnDlSub = card.querySelector('.btn-dl-sub');
+        if (btnDlSub) {
+          btnDlSub.addEventListener('click', async () => {
+            const idx = parseInt(card.querySelector('.sel-sub').value.replace('s_', ''), 10);
+            const subItem = item.subtitles[idx];
+            downloadSubtitleAsSrt(subItem);
+          });
+        }
 
         mediaContainer.appendChild(card);
         return;
       }
 
-      // B. Thẻ Media đơn lẻ
+      // B. Thẻ Media thông thường
+      const card = document.createElement('div');
+      card.className = 'media-card';
+
       const isAudio = item.category === 'audio';
       const isVideo = item.category === 'video';
       const isHls = item.type === 'hls';
@@ -276,7 +346,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 5. Download handler
+  // 5. Download Subtitle (.srt)
+  async function downloadSubtitleAsSrt(subItem) {
+    try {
+      const resp = await fetch(subItem.url);
+      const text = await resp.text();
+      const srtContent = convertTimedTextToSrt(text);
+
+      const blob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        chrome.runtime.sendMessage({
+          action: 'DOWNLOAD_DIRECT',
+          url: reader.result,
+          filename: subItem.filename || 'subtitles.srt'
+        });
+      };
+      reader.readAsDataURL(blob);
+    } catch (e) {
+      console.error('Lỗi tải phụ đề:', e);
+    }
+  }
+
+  // 6. Download handler
   function handleDownload(item) {
     if (!item || !item.url) return;
     if (item.type === 'hls') {
@@ -301,7 +393,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 6. Tabs & Buttons
+  // 7. Tabs & Buttons
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       tabButtons.forEach(b => b.classList.remove('active'));

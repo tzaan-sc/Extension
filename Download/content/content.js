@@ -1,4 +1,4 @@
-// OmniLoader - Content Script (Đầy đủ độ phân giải 4K, 1080p, 720p, 480p, 360p, MP3)
+// OmniLoader - Content Script (Batch Extraction & Zero Lag)
 
 (function () {
   'use strict';
@@ -21,8 +21,8 @@
       const isM3u8 = url.includes('.m3u8');
       const isAudio = url.includes('.mp3') || url.includes('.m4a') || url.includes('.wav');
 
-      reportMedia({
-        id: `sniff_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      reportSingleMedia({
+        id: `sniff_${url.split('?')[0].substr(-20)}`,
         url: url,
         filename: `${sanitizeFilename(title || document.title)}.${isM3u8 ? 'mp4' : (isAudio ? 'mp3' : 'mp4')}`,
         type: isM3u8 ? 'hls' : (isAudio ? 'audio' : 'video'),
@@ -38,41 +38,45 @@
     }
   });
 
-  // Bóc tách toàn bộ độ phân giải YouTube
+  // Gom toàn bộ Video, Audio và Phụ đề thành 1 gói Batch gửi về Background
   function handleYouTubeData(data) {
-    const { videoDetails, streamingData } = data;
+    const { videoDetails, streamingData, captionTracks } = data;
     if (!streamingData) return;
 
     const title = videoDetails?.title || document.title;
     const thumbnail = videoDetails?.thumbnail?.thumbnails?.slice(-1)[0]?.url || '';
+    const batchItems = [];
 
-    // 1. Phân tích Formats (360p / 720p chuẩn)
+    // 1. Phân tích Formats (360p & 720p Video + Audio)
     if (streamingData.formats) {
-      streamingData.formats.forEach((fmt, idx) => {
+      streamingData.formats.forEach((fmt) => {
         const directUrl = fmt.url || extractCipherUrl(fmt);
         if (!directUrl) return;
 
-        const label = fmt.qualityLabel || (fmt.height ? `${fmt.height}p` : '360p');
-        reportMedia({
-          id: `yt_std_${fmt.itag || idx}_${label}`,
+        const height = fmt.height || 360;
+        const qualityName = getQualityLabel(height);
+
+        batchItems.push({
+          id: `yt_std_${height}p_${fmt.itag || 'std'}`,
           url: directUrl,
-          filename: `${sanitizeFilename(title)} [${label}].mp4`,
+          filename: `${sanitizeFilename(title)} [${height}p].mp4`,
           title: title,
-          quality: `${label} (MP4 Có tiếng)`,
+          quality: `${qualityName} (${height}p)`,
+          resolution: `${height}p`,
           thumbnail: thumbnail,
           type: 'video',
           category: 'video',
           ext: 'mp4',
-          format: `Video MP4 (${label})`,
+          format: `${qualityName} (${height}p)`,
           size: fmt.contentLength ? parseInt(fmt.contentLength, 10) : 0,
           source: 'youtube'
         });
       });
     }
 
-    // 2. Phân tích Adaptive Formats (1080p Full HD, 2K, 4K, 720p60, 480p, Audio M4A)
+    // 2. Phân tích Adaptive Formats (1080p, 720p, 480p, 360p, 240p, 144p & Audio)
     if (streamingData.adaptiveFormats) {
-      streamingData.adaptiveFormats.forEach((fmt, idx) => {
+      streamingData.adaptiveFormats.forEach((fmt) => {
         const directUrl = fmt.url || extractCipherUrl(fmt);
         if (!directUrl) return;
 
@@ -80,40 +84,85 @@
         
         if (isAudio) {
           const bitrate = Math.round((fmt.bitrate || 128000) / 1000);
-          const label = `${bitrate}kbps`;
-          reportMedia({
-            id: `yt_audio_${fmt.itag || idx}_${label}`,
+          batchItems.push({
+            id: `yt_audio_${bitrate}k_${fmt.itag || 'aud'}`,
             url: directUrl,
-            filename: `${sanitizeFilename(title)} [Audio ${label}].m4a`,
+            filename: `${sanitizeFilename(title)} [Audio ${bitrate}kbps].mp3`,
             title: title,
-            quality: `Âm thanh (${label})`,
+            quality: `Audio ${bitrate}kbps`,
+            resolution: `${bitrate}kbps`,
             thumbnail: thumbnail,
             type: 'audio',
             category: 'audio',
-            ext: 'm4a',
-            format: `Âm thanh M4A/MP3 (${label})`,
+            ext: 'mp3',
+            format: `Âm thanh (${bitrate}kbps)`,
             size: fmt.contentLength ? parseInt(fmt.contentLength, 10) : 0,
             source: 'youtube'
           });
-        } else {
-          const label = fmt.qualityLabel || (fmt.height ? `${fmt.height}p` : 'HD');
-          reportMedia({
-            id: `yt_video_${fmt.itag || idx}_${label}`,
+        } else if (fmt.height) {
+          const height = fmt.height;
+          const qualityName = getQualityLabel(height);
+
+          batchItems.push({
+            id: `yt_video_${height}p_${fmt.itag || 'adapt'}`,
             url: directUrl,
-            filename: `${sanitizeFilename(title)} [${label}].mp4`,
+            filename: `${sanitizeFilename(title)} [${height}p].mp4`,
             title: title,
-            quality: `${label} (Hình ảnh sắc nét)`,
+            quality: `${qualityName} (${height}p)`,
+            resolution: `${height}p`,
             thumbnail: thumbnail,
             type: 'video',
             category: 'video',
             ext: 'mp4',
-            format: `Video HD (${label})`,
+            format: `${qualityName} (${height}p)`,
             size: fmt.contentLength ? parseInt(fmt.contentLength, 10) : 0,
             source: 'youtube'
           });
         }
       });
     }
+
+    // 3. Phân tích Phụ đề (Subtitles .srt)
+    if (captionTracks && captionTracks.length > 0) {
+      captionTracks.forEach((cap, idx) => {
+        if (cap.baseUrl) {
+          const langName = cap.name?.simpleText || cap.languageCode || 'Phụ đề';
+          batchItems.push({
+            id: `yt_sub_${cap.languageCode || idx}`,
+            url: cap.baseUrl,
+            filename: `${sanitizeFilename(title)} [${langName}].srt`,
+            title: title,
+            quality: langName,
+            resolution: 'Phụ đề',
+            thumbnail: thumbnail,
+            type: 'subtitle',
+            category: 'document',
+            ext: 'srt',
+            format: `Phụ đề (${langName})`,
+            size: 0,
+            source: 'youtube'
+          });
+        }
+      });
+    }
+
+    if (batchItems.length > 0) {
+      chrome.runtime.sendMessage({
+        action: 'ADD_BATCH_MEDIA',
+        items: batchItems
+      });
+    }
+  }
+
+  function getQualityLabel(height) {
+    if (height >= 2160) return '4K Siêu nét';
+    if (height >= 1440) return '2K QHD';
+    if (height >= 1080) return 'Full HD';
+    if (height >= 720) return 'HD';
+    if (height >= 480) return 'Tiêu chuẩn';
+    if (height >= 360) return 'Trung bình';
+    if (height >= 240) return 'Thấp';
+    return 'Di động (144p)';
   }
 
   function extractCipherUrl(fmt) {
@@ -128,6 +177,7 @@
   }
 
   function scanDOMMedia() {
+    const batch = [];
     document.querySelectorAll('video').forEach((video, idx) => {
       let src = video.currentSrc || video.src;
       if (!src) {
@@ -135,7 +185,7 @@
         if (source) src = source.src;
       }
       if (src && !src.startsWith('blob:')) {
-        reportMedia({
+        batch.push({
           id: `dom_vid_${idx}_${src.substring(0, 30)}`,
           url: src,
           filename: `${sanitizeFilename(document.title)}_video_${idx + 1}.mp4`,
@@ -155,7 +205,7 @@
         if (source) src = source.src;
       }
       if (src && !src.startsWith('blob:')) {
-        reportMedia({
+        batch.push({
           id: `dom_aud_${idx}_${src.substring(0, 30)}`,
           url: src,
           filename: `${sanitizeFilename(document.title)}_audio_${idx + 1}.mp3`,
@@ -167,9 +217,16 @@
         });
       }
     });
+
+    if (batch.length > 0) {
+      chrome.runtime.sendMessage({
+        action: 'ADD_BATCH_MEDIA',
+        items: batch
+      });
+    }
   }
 
-  function reportMedia(item) {
+  function reportSingleMedia(item) {
     if (!item.url) return;
     chrome.runtime.sendMessage({
       action: 'ADD_CUSTOM_MEDIA',
@@ -198,5 +255,5 @@
   } else {
     scanDOMMedia();
   }
-  setInterval(scanDOMMedia, 2500);
+  setInterval(scanDOMMedia, 3000);
 })();
