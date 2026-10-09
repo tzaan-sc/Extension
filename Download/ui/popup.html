@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniLoader</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>OmniLoader</h1>
+          <span class="version-tag">Pro Downloader</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button id="btnRefresh" class="icon-btn" title="Quét lại trang">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Page Info Badge -->
+    <div class="page-meta">
+      <span class="meta-label">Trang hiện tại:</span>
+      <span id="pageTitle" class="meta-title" title="...">Đang tải...</span>
+    </div>
+
+    <!-- Filter Tabs -->
+    <nav class="filter-tabs">
+      <button class="tab-btn active" data-category="all">
+        Tất cả <span id="countAll" class="tab-count">0</span>
+      </button>
+      <button class="tab-btn" data-category="video">
+        Video <span id="countVideo" class="tab-count">0</span>
+      </button>
+      <button class="tab-btn" data-category="audio">
+        Âm thanh <span id="countAudio" class="tab-count">0</span>
+      </button>
+      <button class="tab-btn" data-category="document">
+        Tài liệu <span id="countDoc" class="tab-count">0</span>
+      </button>
+      <button class="tab-btn" data-category="images">
+        Ảnh <span id="countImages" class="tab-count">0</span>
+      </button>
+    </nav>
+
+    <!-- Quick Tool Banners -->
+    <div class="quick-tools">
+      <button id="btnScanCanvas" class="tool-btn" title="Quét web học liệu (Scribd, Studocu, Canvas) và xuất file PDF">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        <span>Cào tài liệu sang PDF</span>
+      </button>
+      <button id="btnScanImages" class="tool-btn" title="Quét và tải toàn bộ ảnh chất lượng cao trên trang">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+          <polyline points="21 15 16 10 5 21"></polyline>
+        </svg>
+        <span>Tải album ảnh</span>
+      </button>
+    </div>
+
+    <!-- Media List -->
+    <main class="media-container" id="mediaContainer">
+      <!-- Dynamic Media Cards injected via JS -->
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+        </div>
+        <h3>Chưa tìm thấy Media</h3>
+        <p>Hãy bật phát video hoặc cuộn trang để OmniLoader tự động bắt link.</p>
+      </div>
+    </main>
+
+    <!-- Progress Notification Modal (Khi tải HLS hoặc xuất PDF) -->
+    <div class="progress-overlay" id="progressOverlay" style="display: none;">
+      <div class="progress-card">
+        <div class="progress-header">
+          <div class="spinner"></div>
+          <h4 id="progressTitle">Đang tải và ghép video HLS...</h4>
+        </div>
+        <p id="progressDetail" class="progress-detail">Đã tải 0 / 0 đoạn (0%)</p>
+        <div class="progress-bar-bg">
+          <div id="progressBarFill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
