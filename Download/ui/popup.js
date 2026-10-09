@@ -1,15 +1,12 @@
-// OmniLoader - Popup UI Controller (Hoàn toàn độc lập, ổn định 100%)
+// OmniLoader - Popup UI Controller (Giao diện sạch sẽ, lọc chuẩn xác theo Tab)
 
-// Bộ chuyển đổi phụ đề YouTube sang chuẩn .SRT
 function convertTimedTextToSrt(xmlText) {
   try {
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
     const textNodes = xmlDoc.getElementsByTagName('text');
 
-    if (!textNodes || textNodes.length === 0) {
-      return xmlText;
-    }
+    if (!textNodes || textNodes.length === 0) return xmlText;
 
     let srtOutput = '';
     for (let i = 0; i < textNodes.length; i++) {
@@ -73,7 +70,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {}
   }
 
-  // 2. Lấy media từ Background
+  // 2. Lấy dữ liệu Media từ Background
   function loadMedia() {
     if (!currentTab) return;
     chrome.runtime.sendMessage({ action: 'GET_MEDIA', tabId: currentTab.id }, (res) => {
@@ -85,6 +82,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 3. Cập nhật số lượng trên các tab
   function updateCounts() {
     const counts = {
       all: allMedia.length,
@@ -98,7 +96,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('countDoc').textContent = counts.document;
   }
 
-  // 3. Gom nhóm YouTube Media
+  // 4. Gom nhóm dữ liệu YouTube
   function groupYouTubeMedia(items) {
     const ytGroups = new Map();
     const otherItems = [];
@@ -148,25 +146,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     return [...Array.from(ytGroups.values()), ...otherItems];
   }
 
-  // 4. Render danh sách
+  // 5. Render danh sách thẻ Media theo Tab được chọn
   function renderMedia() {
-    const filtered = currentCategory === 'all'
-      ? allMedia
-      : allMedia.filter(m => m.category === currentCategory || (currentCategory === 'document' && m.type === 'subtitle'));
-
     mediaContainer.querySelectorAll('.media-card, .yt-master-card').forEach(el => el.remove());
 
-    if (filtered.length === 0) {
+    if (allMedia.length === 0) {
       emptyState.style.display = 'flex';
       return;
     }
 
     emptyState.style.display = 'none';
-    const displayList = groupYouTubeMedia(filtered);
+    const displayList = groupYouTubeMedia(allMedia);
+    let renderedCount = 0;
 
     displayList.forEach((item) => {
-      // A. YouTube Master Card (Video / Audio / Phụ đề)
+      // A. Thẻ YouTube Master Card
       if (item.isYouTube) {
+        const showVideo = (currentCategory === 'all' || currentCategory === 'video') && item.videos.length > 0;
+        const showAudio = (currentCategory === 'all' || currentCategory === 'audio') && item.audios.length > 0;
+        const showSub = (currentCategory === 'all' || currentCategory === 'document') && item.subtitles.length > 0;
+
+        // Nếu không có phần nào thỏa mãn tab lọc thì bỏ qua
+        if (!showVideo && !showAudio && !showSub) return;
+
+        renderedCount++;
         const card = document.createElement('div');
         card.className = 'yt-master-card';
 
@@ -197,7 +200,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
           </div>
 
-          ${item.videos.length > 0 ? `
+          ${showVideo ? `
             <div class="format-section">
               <div class="section-title">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
@@ -210,7 +213,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
           ` : ''}
 
-          ${item.audios.length > 0 ? `
+          ${showAudio ? `
             <div class="format-section">
               <div class="section-title">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
@@ -223,7 +226,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
           ` : ''}
 
-          ${item.subtitles.length > 0 ? `
+          ${showSub ? `
             <div class="format-section">
               <div class="section-title">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
@@ -266,7 +269,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      // B. Thẻ Media thông thường (MP3, MP4, HLS...)
+      // B. Thẻ Media thông thường
+      if (currentCategory !== 'all' && item.category !== currentCategory) return;
+
+      renderedCount++;
       const card = document.createElement('div');
       card.className = 'media-card';
 
@@ -355,9 +361,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       mediaContainer.appendChild(card);
     });
+
+    if (renderedCount === 0) {
+      emptyState.style.display = 'flex';
+    }
   }
 
-  // 5. Tải Phụ đề sang .SRT
+  // 6. Tải Phụ đề sang .SRT
   async function downloadSubtitleAsSrt(subItem) {
     try {
       const resp = await fetch(subItem.url);
@@ -379,7 +389,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 6. Tải Media thông thường
+  // 7. Tải file Media
   function handleDownload(item) {
     if (!item || !item.url) return;
     if (item.type === 'hls') {
@@ -404,7 +414,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 7. Tabs & Buttons
+  // 8. Chuyển Tab lọc
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       tabButtons.forEach(b => b.classList.remove('active'));

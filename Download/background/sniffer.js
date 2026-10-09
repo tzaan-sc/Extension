@@ -1,7 +1,6 @@
-// OmniLoader - Persistent & Thread-Safe Sniffer Module
+// OmniLoader - Strict & Clean Media Sniffer (Lọc sạch rác, chunk phân mảnh và file lỗi)
 
 export class MediaSniffer {
-  // Bộ nhớ đệm RAM tức thì (tránh Race Condition)
   static memoryCache = new Map();
 
   static async initTab(tabId) {
@@ -21,23 +20,19 @@ export class MediaSniffer {
     return this.memoryCache.get(tabId) || [];
   }
 
-  // Thêm hàng loạt Media Item trong 1 thao tác duy nhất (Atomic Batch)
   static async addMediaBatch(tabId, items) {
     if (!tabId || tabId < 0 || !items || items.length === 0) return;
     await this.initTab(tabId);
 
     const existing = this.memoryCache.get(tabId) || [];
     const existingMap = new Map();
-    existing.forEach(item => {
-      const k = item.id || (item.url + (item.quality || '') + (item.ext || ''));
-      existingMap.set(k, item);
-    });
+    existing.forEach(item => existingMap.set(item.id || item.url, item));
 
     items.forEach(item => {
-      if (!item.url) return;
-      const k = item.id || (item.url + (item.quality || '') + (item.ext || ''));
-      if (!existingMap.has(k)) {
-        existingMap.set(k, {
+      if (!item.url || !this.isValidMedia(item)) return;
+      const key = item.id || (item.url.split('?')[0] + (item.quality || '') + (item.ext || ''));
+      if (!existingMap.has(key)) {
+        existingMap.set(key, {
           ...item,
           id: item.id || `item_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
           tabId: tabId,
@@ -66,48 +61,70 @@ export class MediaSniffer {
     await chrome.storage.session.remove(key).catch(() => {});
   }
 
+  // Bộ lọc nghiêm ngặt: Loại bỏ file rác, chunk 1-2 giây, analytics, audio ping
+  static isValidMedia(item) {
+    if (!item.url || typeof item.url !== 'string') return false;
+    const url = item.url.toLowerCase();
+
+    // 1. Loại bỏ các chunk phân mảnh DASH/HLS tải dở (không có moov header)
+    if (url.includes('&range=') || url.includes('chunk_') || url.includes('/segment-') || url.includes('/seg-')) {
+      return false;
+    }
+
+    // 2. Loại bỏ tracking / beacon / ad audio
+    if (url.includes('google-analytics') || url.includes('doubleclick') || url.includes('stats') || url.includes('log_event')) {
+      return false;
+    }
+
+    // 3. Loại bỏ file quá nhỏ không phải media thực sự (nhỏ hơn 50KB)
+    if (item.size > 0 && item.size < 51200 && !item.url.includes('.m3u8') && item.ext !== 'srt') {
+      return false;
+    }
+
+    return true;
+  }
+
   static detectType(url, mimeType = '', responseHeaders = []) {
     if (!url) return null;
     const cleanUrl = url.split('?')[0].toLowerCase();
     const mime = (mimeType || '').toLowerCase();
 
+    // Bỏ qua YouTube trong Network Sniffer vì YouTube đã có Module Riêng chuẩn 100%
+    if (url.includes('googlevideo.com') || url.includes('youtube.com')) {
+      return null;
+    }
+
     // 1. Âm thanh
-    if (cleanUrl.endsWith('.mp3') || mime.includes('audio/mpeg') || mime.includes('audio/mp3') || url.includes('.mp3')) {
+    if (cleanUrl.endsWith('.mp3') || mime.includes('audio/mpeg') || mime.includes('audio/mp3')) {
       return { type: 'audio', category: 'audio', ext: 'mp3', format: 'MP3 Audio' };
     }
-    if (cleanUrl.endsWith('.m4a') || mime.includes('audio/mp4') || mime.includes('audio/m4a') || url.includes('.m4a')) {
+    if (cleanUrl.endsWith('.m4a') || mime.includes('audio/mp4') || mime.includes('audio/m4a')) {
       return { type: 'audio', category: 'audio', ext: 'm4a', format: 'M4A Audio' };
     }
-    if (cleanUrl.endsWith('.wav') || mime.includes('audio/wav') || url.includes('.wav')) {
+    if (cleanUrl.endsWith('.wav') || mime.includes('audio/wav')) {
       return { type: 'audio', category: 'audio', ext: 'wav', format: 'WAV Audio' };
-    }
-    if (cleanUrl.endsWith('.aac') || mime.includes('audio/aac')) {
-      return { type: 'audio', category: 'audio', ext: 'aac', format: 'AAC Audio' };
     }
     if (mime.startsWith('audio/')) {
       return { type: 'audio', category: 'audio', ext: 'mp3', format: 'Audio' };
     }
 
-    // 2. Video HLS / DASH
-    if (cleanUrl.endsWith('.m3u8') || mime.includes('application/x-mpegurl') || mime.includes('application/vnd.apple.mpegurl') || url.includes('.m3u8')) {
+    // 2. Video HLS m3u8
+    if (cleanUrl.endsWith('.m3u8') || mime.includes('application/x-mpegurl') || mime.includes('application/vnd.apple.mpegurl')) {
       return { type: 'hls', category: 'video', ext: 'm3u8', format: 'HLS Stream (m3u8)' };
     }
-    if (cleanUrl.endsWith('.mpd') || mime.includes('application/dash+xml')) {
-      return { type: 'dash', category: 'video', ext: 'mpd', format: 'DASH Stream' };
-    }
 
-    // 3. Video Trực tiếp
-    if (cleanUrl.endsWith('.mp4') || mime.includes('video/mp4') || url.includes('.mp4')) {
+    // 3. Video trực tiếp
+    if (cleanUrl.endsWith('.mp4') || mime.includes('video/mp4')) {
       return { type: 'video', category: 'video', ext: 'mp4', format: 'MP4 Video' };
     }
-    if (cleanUrl.endsWith('.webm') || mime.includes('video/webm') || url.includes('.webm')) {
+    if (cleanUrl.endsWith('.webm') || mime.includes('video/webm')) {
       return { type: 'video', category: 'video', ext: 'webm', format: 'WebM Video' };
     }
     if (mime.startsWith('video/')) {
       return { type: 'video', category: 'video', ext: 'mp4', format: 'Video' };
     }
 
-    // 4. Tài liệu
+    // 4. Tài liệu PDF
     if (cleanUrl.endsWith('.pdf') || mime.includes('application/pdf')) {
       return { type: 'document', category: 'document', ext: 'pdf', format: 'PDF Document' };
     }
@@ -134,8 +151,8 @@ export class MediaSniffer {
       const parts = pathname.split('/').filter(p => p.trim() !== '');
       if (parts.length > 0) {
         let name = decodeURIComponent(parts[parts.length - 1]);
-        if (name.includes('.')) {
-          return name.replace(/[\\/:*?"<>|]/g, '_').substring(0, 100);
+        if (name.includes('.') && name.length < 100) {
+          return name.replace(/[\\/:*?"<>|]/g, '_');
         }
       }
     } catch (e) {}

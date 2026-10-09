@@ -1,4 +1,4 @@
-// OmniLoader - Content Script (Batch Extraction & Zero Lag)
+// OmniLoader - Content Script (Bóc tách chuẩn xác Video / Audio / Phụ đề)
 
 (function () {
   'use strict';
@@ -18,17 +18,19 @@
 
     if (event.data.type === 'OMNILOADER_SNIFFED_URL') {
       const { url, title } = event.data;
+      if (url.includes('&range=') || url.includes('chunk_')) return;
+
       const isM3u8 = url.includes('.m3u8');
       const isAudio = url.includes('.mp3') || url.includes('.m4a') || url.includes('.wav');
 
       reportSingleMedia({
-        id: `sniff_${url.split('?')[0].substr(-20)}`,
+        id: `sniff_${url.split('?')[0].substr(-25)}`,
         url: url,
         filename: `${sanitizeFilename(title || document.title)}.${isM3u8 ? 'mp4' : (isAudio ? 'mp3' : 'mp4')}`,
         type: isM3u8 ? 'hls' : (isAudio ? 'audio' : 'video'),
         category: isAudio ? 'audio' : 'video',
         ext: isM3u8 ? 'm3u8' : (isAudio ? 'mp3' : 'mp4'),
-        format: isM3u8 ? 'HLS Stream (m3u8)' : (isAudio ? 'Audio Stream' : 'Direct Video'),
+        format: isM3u8 ? 'HLS Stream (m3u8)' : (isAudio ? 'Audio Stream' : 'Video MP4'),
         source: 'dom_hook'
       });
     }
@@ -38,7 +40,6 @@
     }
   });
 
-  // Gom toàn bộ Video, Audio và Phụ đề thành 1 gói Batch gửi về Background
   function handleYouTubeData(data) {
     const { videoDetails, streamingData, captionTracks } = data;
     if (!streamingData) return;
@@ -47,7 +48,7 @@
     const thumbnail = videoDetails?.thumbnail?.thumbnails?.slice(-1)[0]?.url || '';
     const batchItems = [];
 
-    // 1. Phân tích Formats (360p & 720p Video + Audio)
+    // 1. Phân tích Formats (360p / 720p Video + Audio hoàn chỉnh)
     if (streamingData.formats) {
       streamingData.formats.forEach((fmt) => {
         const directUrl = fmt.url || extractCipherUrl(fmt);
@@ -57,7 +58,7 @@
         const qualityName = getQualityLabel(height);
 
         batchItems.push({
-          id: `yt_std_${height}p_${fmt.itag || 'std'}`,
+          id: `yt_std_${height}p`,
           url: directUrl,
           filename: `${sanitizeFilename(title)} [${height}p].mp4`,
           title: title,
@@ -74,7 +75,7 @@
       });
     }
 
-    // 2. Phân tích Adaptive Formats (1080p, 720p, 480p, 360p, 240p, 144p & Audio)
+    // 2. Phân tích Adaptive Formats (1080p, 720p, 480p, 240p, 144p & Audio)
     if (streamingData.adaptiveFormats) {
       streamingData.adaptiveFormats.forEach((fmt) => {
         const directUrl = fmt.url || extractCipherUrl(fmt);
@@ -85,7 +86,7 @@
         if (isAudio) {
           const bitrate = Math.round((fmt.bitrate || 128000) / 1000);
           batchItems.push({
-            id: `yt_audio_${bitrate}k_${fmt.itag || 'aud'}`,
+            id: `yt_audio_${bitrate}k`,
             url: directUrl,
             filename: `${sanitizeFilename(title)} [Audio ${bitrate}kbps].mp3`,
             title: title,
@@ -104,7 +105,7 @@
           const qualityName = getQualityLabel(height);
 
           batchItems.push({
-            id: `yt_video_${height}p_${fmt.itag || 'adapt'}`,
+            id: `yt_adapt_${height}p`,
             url: directUrl,
             filename: `${sanitizeFilename(title)} [${height}p].mp4`,
             title: title,
@@ -122,7 +123,7 @@
       });
     }
 
-    // 3. Phân tích Phụ đề (Subtitles .srt)
+    // 3. Phân tích Phụ đề
     if (captionTracks && captionTracks.length > 0) {
       captionTracks.forEach((cap, idx) => {
         if (cap.baseUrl) {
@@ -177,6 +178,9 @@
   }
 
   function scanDOMMedia() {
+    // Bỏ qua quét DOM video trên YouTube vì YouTube đã có bộ bóc tách riêng sạch sẽ
+    if (window.location.hostname.includes('youtube.com')) return;
+
     const batch = [];
     document.querySelectorAll('video').forEach((video, idx) => {
       let src = video.currentSrc || video.src;
@@ -184,7 +188,7 @@
         const source = video.querySelector('source');
         if (source) src = source.src;
       }
-      if (src && !src.startsWith('blob:')) {
+      if (src && !src.startsWith('blob:') && !src.includes('&range=')) {
         batch.push({
           id: `dom_vid_${idx}_${src.substring(0, 30)}`,
           url: src,
@@ -204,7 +208,7 @@
         const source = audio.querySelector('source');
         if (source) src = source.src;
       }
-      if (src && !src.startsWith('blob:')) {
+      if (src && !src.startsWith('blob:') && !src.includes('&range=')) {
         batch.push({
           id: `dom_aud_${idx}_${src.substring(0, 30)}`,
           url: src,
@@ -239,7 +243,7 @@
       .replace(/[\\/:*?"<>|]/g, '_')
       .replace(/\s+/g, ' ')
       .trim()
-      .substring(0, 120);
+      .substring(0, 100);
   }
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
