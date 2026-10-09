@@ -1,4 +1,4 @@
-// OmniLoader - Content Script (Tự động quét Canvas và báo số lượng tài liệu lên Badge & Tab)
+// OmniLoader - Content Script (Tự động nhận diện tài liệu Canvas, Ảnh nhiều trang & PDF nhúng)
 
 (function () {
   'use strict';
@@ -174,7 +174,7 @@
     }
   }
 
-  // 3. Quét Media DOM và Canvas Học Liệu
+  // Quét toàn diện DOM
   function scanDOMMedia() {
     if (window.location.hostname.includes('youtube.com')) return;
 
@@ -239,8 +239,8 @@
       }
     });
 
-    // Tài liệu Canvas học liệu (Scribd, Studocu, Canvas LMS)
-    const canvases = Array.from(document.querySelectorAll('canvas')).filter(c => c.width > 150 && c.height > 150);
+    // Tài liệu Canvas học liệu (Scribd, Studocu, Canvas LMS, Quizlet)
+    const canvases = Array.from(document.querySelectorAll('canvas')).filter(c => c.width > 120 && c.height > 120);
     if (canvases.length > 0) {
       batch.push({
         id: `canvas_doc_${canvases.length}p`,
@@ -252,7 +252,7 @@
         ext: 'pdf',
         quality: `${canvases.length} trang`,
         format: `Tài liệu Canvas (${canvases.length} trang)`,
-        sizeFormatted: `${canvases.length} trang`,
+        sizeFormatted: `${canvases.length} trang PDF`,
         source: 'dom_canvas'
       });
     }
