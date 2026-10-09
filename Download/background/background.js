@@ -14,7 +14,7 @@ async function updateBadge(tabId) {
   }
 }
 
-// 1. Lắng nghe HTTP Web Requests để bắt link ngầm (Audio / Video / PDF)
+// 1. Lắng nghe HTTP Web Requests để bắt link ngầm
 chrome.webRequest.onHeadersReceived.addListener(
   async (details) => {
     if (!details.url || details.url.startsWith('chrome-extension://') || details.tabId < 0) {
@@ -63,7 +63,7 @@ chrome.webRequest.onHeadersReceived.addListener(
   ['responseHeaders']
 );
 
-// 2. Dọn dẹp dữ liệu khi đóng tab hoặc tải lại tab
+// 2. Dọn dẹp dữ liệu
 chrome.tabs.onRemoved.addListener((tabId) => {
   MediaSniffer.clearTab(tabId);
 });
@@ -75,7 +75,22 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   }
 });
 
-// 3. Xử lý tin nhắn
+// 3. Quản lý Offscreen Document
+async function ensureOffscreenDocument() {
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT']
+  });
+
+  if (existingContexts.length > 0) return;
+
+  await chrome.offscreen.createDocument({
+    url: 'offscreen/offscreen.html',
+    reasons: ['BLOBS', 'DOM_PARSER', 'AUDIO_PLAYBACK'],
+    justification: 'Xử lý ghép luồng video m3u8 và tách âm thanh MP3 từ video'
+  });
+}
+
+// 4. Xử lý tin nhắn
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const tabId = sender.tab ? sender.tab.id : message.tabId;
 
@@ -125,6 +140,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       }
     );
+    return true;
+  }
+
+  // Lệnh tách âm thanh từ video
+  if (message.action === 'EXTRACT_AUDIO') {
+    (async () => {
+      try {
+        await ensureOffscreenDocument();
+        chrome.runtime.sendMessage({
+          action: 'OFFSCREEN_EXTRACT_AUDIO',
+          payload: message.payload
+        });
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // Lệnh tải m3u8
+  if (message.action === 'START_HLS_DOWNLOAD') {
+    (async () => {
+      try {
+        await ensureOffscreenDocument();
+        chrome.runtime.sendMessage({
+          action: 'OFFSCREEN_START_HLS',
+          payload: message.payload
+        });
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
     return true;
   }
 

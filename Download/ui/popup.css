@@ -372,7 +372,7 @@ body {
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.5);
 }
 
-.btn-copy {
+.btn-copy, .btn-extract-audio {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
@@ -385,6 +385,17 @@ body {
   align-items: center;
   gap: 4px;
   transition: all 0.2s;
+}
+
+.btn-extract-audio {
+  border-color: rgba(52, 211, 153, 0.3);
+  color: #34d399;
+}
+
+.btn-extract-audio:hover {
+  background: rgba(16, 185, 129, 0.15);
+  color: #fff;
+  border-color: var(--accent-emerald);
 }
 
 .btn-copy:hover {

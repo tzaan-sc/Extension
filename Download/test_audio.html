@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Trang Thử Nghiệm Âm Thanh & Media - OmniLoader</title>
+  <title>Trang Thử Nghiệm Âm Thanh & Video - OmniLoader</title>
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -16,7 +16,7 @@
       gap: 24px;
     }
     .container {
-      max-width: 600px;
+      max-width: 620px;
       width: 100%;
       background: #1e293b;
       border-radius: 16px;
@@ -46,8 +46,9 @@
       font-weight: 600;
       color: #f1f5f9;
     }
-    audio {
+    audio, video {
       width: 100%;
+      border-radius: 6px;
     }
     .badge {
       background: #0284c7;
@@ -57,29 +58,35 @@
       font-size: 11px;
       width: fit-content;
     }
+    .badge-video {
+      background: #6366f1;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>🎵 Trang Test Âm Thanh cho OmniLoader</h1>
-    <p>Bấm nút Play (Phát) ở bất kỳ bài nào dưới đây, sau đó bấm vào icon extension OmniLoader trên thanh công cụ để thử tải:</p>
+    <h1>🎵 Trang Test Âm Thanh & Tách MP3 Video</h1>
+    <p>Bấm phát thử âm thanh hoặc video bên dưới, rồi bấm vào icon <b>OmniLoader</b>:</p>
 
+    <!-- Video Test (Thử tách MP3) -->
+    <div class="track-card">
+      <span class="badge badge-video">VIDEO CLIPP (Test Tách Lấy MP3)</span>
+      <div class="track-title">Sample Clip: Big Buck Bunny (MP4 Video)</div>
+      <video controls src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"></video>
+    </div>
+
+    <!-- Audio Test 1 -->
     <div class="track-card">
       <span class="badge">MP3 Audio 1</span>
       <div class="track-title">Sound Sample: Classical Piano</div>
       <audio controls src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"></audio>
     </div>
 
+    <!-- Audio Test 2 -->
     <div class="track-card">
       <span class="badge">MP3 Audio 2</span>
       <div class="track-title">Sound Sample: Upbeat Electronic</div>
       <audio controls src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"></audio>
-    </div>
-
-    <div class="track-card">
-      <span class="badge">MP3 Audio 3</span>
-      <div class="track-title">Sound Sample: Guitar Melody</div>
-      <audio controls src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3"></audio>
     </div>
   </div>
 </body>

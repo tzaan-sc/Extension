@@ -21,14 +21,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       pageTitleElem.textContent = currentTab.title || currentTab.url;
       pageTitleElem.title = currentTab.title || currentTab.url;
 
-      // Tiêm Content Script vào tab nếu tab chưa chạy
       await ensureContentScript(currentTab.id);
     }
   } catch (e) {
     console.error('Error fetching tab:', e);
   }
 
-  // Tự động tiêm script vào tab nếu tab đã mở trước khi cài extension
   async function ensureContentScript(tabId) {
     if (!currentTab || currentTab.url?.startsWith('chrome://') || currentTab.url?.startsWith('edge://')) {
       return;
@@ -41,8 +39,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {}
   }
 
-  // 2. Tải danh sách media từ Background/Storage
-  async function loadMedia() {
+  // 2. Tải danh sách media
+  function loadMedia() {
     if (!currentTab) return;
 
     chrome.runtime.sendMessage(
@@ -72,7 +70,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('countDoc').textContent = counts.document;
   }
 
-  // 4. Render danh sách Media Cards
+  // 4. Render Media Cards
   function renderMedia() {
     const filtered = currentCategory === 'all'
       ? allMedia
@@ -92,18 +90,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       card.className = 'media-card';
 
       const isAudio = item.category === 'audio';
-      const badgeClass = isAudio ? 'badge-audio' : (item.category === 'video' ? 'badge-video' : 'badge-doc');
+      const isVideo = item.category === 'video';
+      const isHls = item.type === 'hls';
+      const badgeClass = isAudio ? 'badge-audio' : (isHls ? 'badge-hls' : (isVideo ? 'badge-video' : 'badge-doc'));
 
       card.innerHTML = `
         <div class="media-info">
           <div class="media-thumb">
-            ${isAudio ? getAudioIcon() : getFallbackIcon(item.category)}
+            ${isAudio ? getAudioIcon() : (item.thumbnail ? `<img src="${item.thumbnail}">` : getFallbackIcon(item.category))}
           </div>
           <div class="media-details">
-            <span class="media-title" title="${item.filename || item.title}">${item.filename || item.title || 'Âm thanh'}</span>
+            <span class="media-title" title="${item.filename || item.title}">${item.filename || item.title || 'Media file'}</span>
             <div class="media-tags">
               <span class="badge ${badgeClass}">${item.quality || item.format || item.ext}</span>
-              <span class="media-size">${item.sizeFormatted || 'Audio Stream'}</span>
+              <span class="media-size">${item.sizeFormatted || 'Stream'}</span>
             </div>
           </div>
         </div>
@@ -121,14 +121,24 @@ document.addEventListener('DOMContentLoaded', async () => {
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            <span>Tải về (${item.ext ? item.ext.toUpperCase() : 'FILE'})</span>
+            <span>Tải ${isAudio ? 'MP3' : (isHls ? 'MP4 (HLS)' : (item.ext ? item.ext.toUpperCase() : 'Video'))}</span>
           </button>
+
+          ${isVideo && !isHls ? `
+            <button class="btn-extract-audio" data-url="${item.url}" title="Chỉ lấy âm thanh MP3 từ video này">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>
+              </svg>
+              <span>Tách MP3</span>
+            </button>
+          ` : ''}
+
           <button class="btn-copy" data-url="${item.url}" title="Sao chép liên kết">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
             </svg>
-            <span>Copy Link</span>
+            <span>Copy</span>
           </button>
         </div>
       `;
@@ -137,6 +147,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       card.querySelector('.btn-download').addEventListener('click', () => {
         handleDownload(item);
       });
+
+      // Nút Tách MP3 từ Video
+      const btnExtract = card.querySelector('.btn-extract-audio');
+      if (btnExtract) {
+        btnExtract.addEventListener('click', () => {
+          const oldText = btnExtract.innerHTML;
+          btnExtract.innerHTML = `<span>⏳ Đang tách...</span>`;
+          chrome.runtime.sendMessage({
+            action: 'EXTRACT_AUDIO',
+            payload: {
+              url: item.url,
+              filename: item.filename || 'extracted_audio.mp3'
+            }
+          }, () => {
+            setTimeout(() => { btnExtract.innerHTML = oldText; }, 3000);
+          });
+        });
+      }
 
       // Nút Copy URL
       card.querySelector('.btn-copy').addEventListener('click', (e) => {
@@ -153,16 +181,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 5. Xử lý tải xuống
   function handleDownload(item) {
-    chrome.runtime.sendMessage({
-      action: 'DOWNLOAD_DIRECT',
-      url: item.url,
-      filename: item.filename || `audio_${Date.now()}.${item.ext || 'mp3'}`
-    }, (res) => {
-      if (!res || !res.success) {
-        // Mở URL trực tiếp nếu download API gặp lỗi
-        window.open(item.url, '_blank');
-      }
-    });
+    if (item.type === 'hls') {
+      chrome.runtime.sendMessage({
+        action: 'START_HLS_DOWNLOAD',
+        payload: {
+          url: item.url,
+          filename: item.filename || 'video.mp4',
+          downloadId: item.id
+        }
+      });
+    } else {
+      chrome.runtime.sendMessage({
+        action: 'DOWNLOAD_DIRECT',
+        url: item.url,
+        filename: item.filename || `media_${Date.now()}.${item.ext || 'mp4'}`
+      }, (res) => {
+        if (!res || !res.success) {
+          window.open(item.url, '_blank');
+        }
+      });
+    }
   }
 
   // 6. Xử lý chuyển Tab Lọc
@@ -175,21 +213,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // 7. Nút Quét tìm Âm thanh trên trang
+  // 7. Nút Quét Âm thanh
   btnScanAudio.addEventListener('click', async () => {
     if (!currentTab) return;
-    
-    // Gửi lệnh quét sâu tới Content Script
     chrome.tabs.sendMessage(currentTab.id, { action: 'SCAN_DOM_NOW' }, () => {
       setTimeout(loadMedia, 400);
     });
-
-    // Chuyển sang tab âm thanh
     const audioTab = document.querySelector('.tab-btn[data-category="audio"]');
     if (audioTab) audioTab.click();
   });
 
-  // 8. Nút Quét lại trang
+  // 8. Nút Quét lại
   btnRefresh.addEventListener('click', () => {
     if (currentTab) {
       chrome.tabs.sendMessage(currentTab.id, { action: 'SCAN_DOM_NOW' });
@@ -205,11 +239,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (category === 'video') {
       return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
     } else {
-      return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>`;
+      return `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 2 2h12a2 2 0 0 2-2V8z"></path></svg>`;
     }
   }
 
-  // Khởi động
   loadMedia();
   setInterval(loadMedia, 1500);
 });
