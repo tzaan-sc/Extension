@@ -10,7 +10,8 @@
     "activeTab",
     "scripting",
     "offscreen",
-    "tabs"
+    "tabs",
+    "sidePanel"
   ],
   "host_permissions": [
     "<all_urls>"

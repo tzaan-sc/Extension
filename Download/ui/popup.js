@@ -25,13 +25,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentTab = tabs[0];
       pageTitleElem.textContent = currentTab.title || currentTab.url;
       pageTitleElem.title = currentTab.title || currentTab.url;
+
+      // Yêu cầu content script quét lại DOM ngay lập tức
+      chrome.tabs.sendMessage(currentTab.id, { action: 'SCAN_DOM_NOW' }, () => {
+        if (chrome.runtime.lastError) {
+          // Tab chưa load content script hoặc là chrome:// page
+        }
+      });
     }
   } catch (e) {
     console.error('Error fetching tab:', e);
   }
 
   // 2. Tải danh sách media từ Background
-  async function loadMedia() {
+  function loadMedia() {
     if (!currentTab) return;
 
     chrome.runtime.sendMessage(
@@ -40,7 +47,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (response && response.success) {
           allMedia = response.data || [];
           updateCounts();
-          renderMedia();
+          if (currentCategory !== 'images') {
+            renderMedia();
+          }
         }
       }
     );
@@ -53,7 +62,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       video: allMedia.filter(m => m.category === 'video').length,
       audio: allMedia.filter(m => m.category === 'audio').length,
       document: allMedia.filter(m => m.category === 'document').length,
-      images: 0
     };
 
     document.getElementById('countAll').textContent = counts.all;
@@ -137,7 +145,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 5. Xử lý tải xuống
   function handleDownload(item) {
     if (item.type === 'hls') {
-      // Tải HLS qua Offscreen Document
       showProgress('Đang tải & ghép luồng video HLS (m3u8)...', 'Đang khởi tạo các luồng tải...');
       chrome.runtime.sendMessage({
         action: 'START_HLS_DOWNLOAD',
@@ -148,14 +155,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
     } else {
-      // Tải trực tiếp qua chrome.downloads API
       chrome.runtime.sendMessage({
         action: 'DOWNLOAD_DIRECT',
         url: item.url,
-        filename: item.filename || 'download'
+        filename: item.filename || 'download.mp4'
       }, (res) => {
         if (!res || !res.success) {
-          // Fallback mở tab mới nếu download API bị chặn
           window.open(item.url, '_blank');
         }
       });
@@ -180,7 +185,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       progressDetail.textContent = `Đã tải ${progress.completed} / ${progress.total} đoạn (${progress.percent}%)`;
       progressBarFill.style.width = `${progress.percent}%`;
     } else if (message.action === 'HLS_DOWNLOAD_COMPLETE') {
-      progressDetail.textContent = 'Hoàn tất! File đã được lưu vào máy.';
+      progressDetail.textContent = 'Hoàn tất! Video đã được lưu vào máy.';
       progressBarFill.style.width = '100%';
       setTimeout(hideProgress, 2000);
     } else if (message.action === 'HLS_DOWNLOAD_ERROR') {
@@ -243,6 +248,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
           mediaContainer.appendChild(card);
         });
+      } else {
+        mediaContainer.querySelectorAll('.media-card').forEach(el => el.remove());
+        emptyState.style.display = 'flex';
       }
     });
   }
@@ -254,10 +262,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     chrome.tabs.sendMessage(currentTab.id, { action: 'SCAN_CANVAS_PAGES' }, (res) => {
       if (res && res.pages && res.pages.length > 0) {
-        progressDetail.textContent = `Tìm thấy ${res.pages.length} trang tài liệu! Đang tạo file PDF...`;
+        progressDetail.textContent = `Tìm thấy ${res.pages.length} trang tài liệu! Đang tải về...`;
         progressBarFill.style.width = '70%';
 
-        // Tải từng trang về hoặc xuất trang
         res.pages.forEach((p) => {
           chrome.runtime.sendMessage({
             action: 'DOWNLOAD_DIRECT',
@@ -270,7 +277,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         progressDetail.textContent = `Đã tải ${res.pages.length} trang thành công!`;
         setTimeout(hideProgress, 2500);
       } else {
-        progressDetail.textContent = 'Không tìm thấy trang tài liệu dạng Canvas nào trên trang này.';
+        progressDetail.textContent = 'Không tìm thấy trang tài liệu Canvas nào trên trang này.';
         setTimeout(hideProgress, 2500);
       }
     });
@@ -284,6 +291,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Nút Refresh
   btnRefresh.addEventListener('click', () => {
+    if (currentTab) {
+      chrome.tabs.sendMessage(currentTab.id, { action: 'SCAN_DOM_NOW' });
+    }
     loadMedia();
   });
 
@@ -293,12 +303,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else if (category === 'audio') {
       return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>`;
     } else {
-      return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>`;
+      return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 2 2h12a2 2 0 0 2-2V8z"></path></svg>`;
     }
   }
 
   // Khởi động
   loadMedia();
-  // Định kỳ tải lại để bắt các media phát sau
   setInterval(loadMedia, 2000);
 });
