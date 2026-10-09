@@ -329,6 +329,41 @@ body {
   color: var(--text-muted);
 }
 
+/* Resolution Selector Box */
+.res-selector-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(11, 15, 25, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.res-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.res-select {
+  background: #1e293b;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.res-select:hover, .res-select:focus {
+  border-color: var(--accent-blue);
+  background: #24304e;
+}
+
 /* Audio Player Preview */
 .audio-player-preview {
   width: 100%;

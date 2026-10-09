@@ -1,13 +1,57 @@
 // OmniLoader - Offscreen Processing Worker
-// Xử lý tải luồng m3u8, ghép video và tách âm thanh MP3/WAV từ Video
+// Tải luồng m3u8 và tách âm thanh MP3/WAV từ Video không bị chặn download
 
 import { audioBufferToWav } from './audio_encoder.js';
 
+// Chuyển Blob thành Data URL để gửi về Background tải qua chrome.downloads API
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// 1. Tách âm thanh từ file Video
+async function extractAudioFromVideo(videoUrl, filename) {
+  try {
+    const resp = await fetch(videoUrl);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const arrayBuffer = await resp.arrayBuffer();
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') {
+      await audioCtx.resume();
+    }
+
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    const wavBlob = audioBufferToWav(audioBuffer);
+    const dataUrl = await blobToDataUrl(wavBlob);
+
+    const safeFilename = (filename || 'audio_extracted')
+      .replace(/\.[^/.]+$/, "") + '.mp3';
+
+    // Gửi về Background để tải bằng chrome.downloads
+    chrome.runtime.sendMessage({
+      action: 'DOWNLOAD_DIRECT',
+      url: dataUrl,
+      filename: safeFilename
+    });
+
+    chrome.runtime.sendMessage({ action: 'AUDIO_EXTRACT_COMPLETE' });
+  } catch (err) {
+    console.error('Lỗi tách âm thanh:', err);
+    chrome.runtime.sendMessage({ action: 'AUDIO_EXTRACT_ERROR', error: err.message });
+  }
+}
+
+// 2. Tải và ghép HLS m3u8
 class HLSDownloader {
-  constructor(m3u8Url, filename, onProgress) {
+  constructor(m3u8Url, filename, downloadId) {
     this.m3u8Url = m3u8Url;
     this.filename = filename || 'video_stream.mp4';
-    this.onProgress = onProgress;
+    this.downloadId = downloadId;
     this.isCancelled = false;
   }
 
@@ -55,7 +99,7 @@ class HLSDownloader {
   async downloadAndMerge() {
     const segments = await this.parseM3U8();
     if (segments.length === 0) {
-      throw new Error('Không tìm thấy đoạn video nào trong file m3u8.');
+      throw new Error('Không tìm thấy đoạn video nào trong luồng.');
     }
 
     const total = segments.length;
@@ -80,13 +124,15 @@ class HLSDownloader {
             completed++;
             success = true;
 
-            if (this.onProgress) {
-              this.onProgress({
+            chrome.runtime.sendMessage({
+              action: 'HLS_PROGRESS_UPDATE',
+              downloadId: this.downloadId,
+              progress: {
                 completed,
                 total,
                 percent: Math.round((completed / total) * 100)
-              });
-            }
+              }
+            });
           } catch (e) {
             retries--;
             if (retries === 0) {
@@ -108,73 +154,33 @@ class HLSDownloader {
     if (this.isCancelled) return;
 
     const mergedBlob = new Blob(downloadedChunks, { type: 'video/mp4' });
-    downloadBlob(mergedBlob, this.filename.endsWith('.mp4') ? this.filename : `${this.filename}.mp4`);
+    const dataUrl = await blobToDataUrl(mergedBlob);
+
+    chrome.runtime.sendMessage({
+      action: 'DOWNLOAD_DIRECT',
+      url: dataUrl,
+      filename: this.filename.endsWith('.mp4') ? this.filename : `${this.filename}.mp4`
+    });
+
+    chrome.runtime.sendMessage({ action: 'HLS_DOWNLOAD_COMPLETE', downloadId: this.downloadId });
   }
-}
-
-// Hàm tách âm thanh từ bất kỳ file Video nào
-async function extractAudioFromVideo(videoUrl, filename) {
-  const resp = await fetch(videoUrl);
-  if (!resp.ok) throw new Error(`Không thể tải video: HTTP ${resp.status}`);
-  const arrayBuffer = await resp.arrayBuffer();
-
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-
-  const audioBlob = audioBufferToWav(audioBuffer);
-  const audioFilename = (filename || 'audio_extracted')
-    .replace(/\.[^/.]+$/, "") + '.mp3';
-
-  downloadBlob(audioBlob, audioFilename);
-}
-
-function downloadBlob(blob, filename) {
-  const blobUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = blobUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    a.remove();
-    URL.revokeObjectURL(blobUrl);
-  }, 15000);
 }
 
 // Lắng nghe lệnh từ Background
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'OFFSCREEN_START_HLS') {
     const { url, filename, downloadId } = message.payload;
-    const downloader = new HLSDownloader(url, filename, (progress) => {
-      chrome.runtime.sendMessage({
-        action: 'HLS_PROGRESS_UPDATE',
-        downloadId,
-        progress
-      });
+    const downloader = new HLSDownloader(url, filename, downloadId);
+    downloader.downloadAndMerge().catch((err) => {
+      chrome.runtime.sendMessage({ action: 'HLS_DOWNLOAD_ERROR', downloadId, error: err.message });
     });
-
-    downloader.downloadAndMerge()
-      .then(() => {
-        chrome.runtime.sendMessage({ action: 'HLS_DOWNLOAD_COMPLETE', downloadId });
-      })
-      .catch((err) => {
-        chrome.runtime.sendMessage({ action: 'HLS_DOWNLOAD_ERROR', downloadId, error: err.message });
-      });
-
     sendResponse({ started: true });
     return true;
   }
 
   if (message.action === 'OFFSCREEN_EXTRACT_AUDIO') {
     const { url, filename } = message.payload;
-    extractAudioFromVideo(url, filename)
-      .then(() => {
-        chrome.runtime.sendMessage({ action: 'AUDIO_EXTRACT_COMPLETE' });
-      })
-      .catch((err) => {
-        chrome.runtime.sendMessage({ action: 'AUDIO_EXTRACT_ERROR', error: err.message });
-      });
-
+    extractAudioFromVideo(url, filename);
     sendResponse({ started: true });
     return true;
   }
