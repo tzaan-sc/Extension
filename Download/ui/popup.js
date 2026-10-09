@@ -1,6 +1,5 @@
-// OmniLoader - Popup UI Controller (Hoàn chỉnh 100% Video, Audio, Phụ đề và Xuất PDF)
+// OmniLoader - Popup UI Controller (Bao gồm Mở Mờ Tài Liệu & Tải Full File)
 
-// 1. Bộ chuyển đổi phụ đề sang .SRT
 function convertTimedTextToSrt(xmlText) {
   try {
     const parser = new DOMParser();
@@ -36,7 +35,6 @@ function convertTimedTextToSrt(xmlText) {
   }
 }
 
-// 2. Bộ tạo file PDF thuần JS từ danh sách ảnh Canvas
 function createPdfFromImages(images) {
   if (!images || images.length === 0) return null;
 
@@ -124,8 +122,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnRefresh = document.getElementById('btnRefresh');
   const btnScanAudio = document.getElementById('btnScanAudio');
   const btnScanCanvas = document.getElementById('btnScanCanvas');
+  const btnUnblurDoc = document.getElementById('btnUnblurDoc');
 
-  // Lấy thông tin tab
   try {
     const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (tabs && tabs.length > 0) {
@@ -162,7 +160,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       all: allMedia.length,
       audio: allMedia.filter(m => m.category === 'audio').length,
       video: allMedia.filter(m => m.category === 'video').length,
-      document: allMedia.filter(m => m.category === 'document' || m.type === 'subtitle').length,
+      document: allMedia.filter(m => m.category === 'document' || m.type === 'subtitle' || m.type === 'canvas_pdf').length,
     };
     document.getElementById('countAll').textContent = counts.all;
     document.getElementById('countAudio').textContent = counts.audio;
@@ -321,6 +319,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const card = document.createElement('div');
       card.className = 'media-card';
 
+      const isCanvasPdf = item.type === 'canvas_pdf';
       const isAudio = item.category === 'audio';
       const isVideo = item.category === 'video';
       const isHls = item.type === 'hls';
@@ -328,7 +327,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       card.innerHTML = `
         <div class="media-info">
-          <div class="media-thumb">${isAudio ? getAudioIcon() : (item.thumbnail ? `<img src="${item.thumbnail}">` : getFallbackIcon(item.category))}</div>
+          <div class="media-thumb">${isAudio ? getAudioIcon() : (isCanvasPdf ? getFallbackIcon('document') : (item.thumbnail ? `<img src="${item.thumbnail}">` : getFallbackIcon(item.category)))}</div>
           <div class="media-details">
             <span class="media-title" title="${item.filename || item.title}">${item.filename || item.title || 'Media file'}</span>
             <div class="media-tags">
@@ -346,7 +345,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         <div class="card-actions">
           <button class="btn-download btn-dl-normal" data-id="${item.id}">
-            <span>Tải ${isAudio ? 'MP3' : (isHls ? 'MP4 (HLS)' : (item.ext ? item.ext.toUpperCase() : 'Video'))}</span>
+            <span>${isCanvasPdf ? 'Xuất File PDF' : `Tải ${isAudio ? 'MP3' : (isHls ? 'MP4 (HLS)' : (item.ext ? item.ext.toUpperCase() : 'Video'))}`}</span>
           </button>
           <button class="btn-copy" data-url="${item.url}" title="Sao chép link"><span>Copy</span></button>
         </div>
@@ -354,7 +353,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const btnDlNormal = card.querySelector('.btn-dl-normal');
       btnDlNormal.addEventListener('click', () => {
-        executeSecureDownload(item, btnDlNormal);
+        if (isCanvasPdf) {
+          btnScanCanvas.click();
+        } else {
+          executeSecureDownload(item, btnDlNormal);
+        }
       });
 
       card.querySelector('.btn-copy').addEventListener('click', (e) => {
@@ -442,7 +445,53 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // NÚT TẢI TÀI LIỆU XUẤT PDF TRỰC TIẾP (Bảo đảm hoạt động 100% trên mọi trang web & file test)
+  // 1. NÚT MỞ MỜ & TỰ ĐỘNG BẺ KHÓA NỘI DUNG ẨN
+  btnUnblurDoc.addEventListener('click', async () => {
+    if (!currentTab) return;
+    const oldHtml = btnUnblurDoc.innerHTML;
+    btnUnblurDoc.innerHTML = `<span>⏳ Đang mở khóa...</span>`;
+
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: currentTab.id },
+        func: () => {
+          let count = 0;
+          // Xóa Filter Blur trên mọi phần tử
+          document.querySelectorAll('*').forEach(el => {
+            const s = window.getComputedStyle(el);
+            if (s.filter && s.filter.includes('blur')) {
+              el.style.setProperty('filter', 'none', 'important');
+              el.style.setProperty('-webkit-filter', 'none', 'important');
+              count++;
+            }
+            if (s.userSelect === 'none') {
+              el.style.setProperty('user-select', 'text', 'important');
+            }
+          });
+          // Xóa Modal / Paywall Overlay
+          const paywalls = document.querySelectorAll('[class*="paywall"], [class*="overlay"], [class*="modal-backdrop"], [id*="paywall"]');
+          paywalls.forEach(p => {
+            p.style.setProperty('display', 'none', 'important');
+            count++;
+          });
+          document.body.style.setProperty('overflow', 'auto', 'important');
+          return count;
+        }
+      });
+
+      const unblurredCount = results && results[0] ? results[0].result : 0;
+      btnUnblurDoc.innerHTML = `<span>✓ Đã mở ${unblurredCount || ''} vị trí!</span>`;
+      setTimeout(() => {
+        btnUnblurDoc.innerHTML = oldHtml;
+        btnScanCanvas.click(); // Tự động quét xuất PDF sau khi mở mờ
+      }, 1500);
+    } catch (e) {
+      btnUnblurDoc.innerHTML = `<span>Lỗi mở mờ</span>`;
+      setTimeout(() => { btnUnblurDoc.innerHTML = oldHtml; }, 2000);
+    }
+  });
+
+  // 2. NÚT TẢI TÀI LIỆU XUẤT PDF TRỰC TIẾP
   btnScanCanvas.addEventListener('click', async () => {
     if (!currentTab) return;
 
@@ -450,7 +499,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnScanCanvas.innerHTML = `<span>⏳ Đang quét trang...</span>`;
 
     try {
-      // Thực thi quét Canvas trực tiếp trên tab
       const results = await chrome.scripting.executeScript({
         target: { tabId: currentTab.id },
         func: () => {
@@ -494,11 +542,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           reader.readAsDataURL(pdfBlob);
         }
       } else {
-        btnScanCanvas.innerHTML = `<span>Không tìm thấy trang Canvas</span>`;
+        btnScanCanvas.innerHTML = `<span>Không tìm thấy Canvas</span>`;
         setTimeout(() => { btnScanCanvas.innerHTML = oldHtml; }, 3000);
       }
     } catch (err) {
-      console.error('Lỗi xuất PDF:', err);
       btnScanCanvas.innerHTML = `<span>Lỗi quyền truy cập</span>`;
       setTimeout(() => { btnScanCanvas.innerHTML = oldHtml; }, 3000);
     }

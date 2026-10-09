@@ -1,9 +1,8 @@
-// OmniLoader - Content Script (Classic Script, KHÔNG dùng import để chạy 100% mượt mà trên mọi trang)
+// OmniLoader - Content Script (Tự động quét Canvas và báo số lượng tài liệu lên Badge & Tab)
 
 (function () {
   'use strict';
 
-  // 1. Inject Main World Script
   function injectMainWorldScript() {
     try {
       const script = document.createElement('script');
@@ -14,7 +13,6 @@
   }
   injectMainWorldScript();
 
-  // 2. Lắng nghe thông điệp từ Injected Script
   window.addEventListener('message', (event) => {
     if (event.source !== window || !event.data || !event.data.type) return;
 
@@ -176,11 +174,13 @@
     }
   }
 
-  // 3. Quét Media DOM
+  // 3. Quét Media DOM và Canvas Học Liệu
   function scanDOMMedia() {
     if (window.location.hostname.includes('youtube.com')) return;
 
     const batch = [];
+
+    // Video
     document.querySelectorAll('video').forEach((video, idx) => {
       let src = video.currentSrc || video.src;
       if (!src) {
@@ -201,6 +201,7 @@
       }
     });
 
+    // Audio
     document.querySelectorAll('audio').forEach((audio, idx) => {
       let src = audio.currentSrc || audio.src;
       if (!src) {
@@ -221,6 +222,7 @@
       }
     });
 
+    // Tài liệu PDF nhúng
     document.querySelectorAll('embed[type="application/pdf"], iframe[src*=".pdf"], a[href$=".pdf"]').forEach((el, idx) => {
       const src = el.src || el.href;
       if (src && !src.startsWith('blob:')) {
@@ -237,31 +239,30 @@
       }
     });
 
+    // Tài liệu Canvas học liệu (Scribd, Studocu, Canvas LMS)
+    const canvases = Array.from(document.querySelectorAll('canvas')).filter(c => c.width > 150 && c.height > 150);
+    if (canvases.length > 0) {
+      batch.push({
+        id: `canvas_doc_${canvases.length}p`,
+        url: window.location.href,
+        title: document.title || 'Tài liệu học tập',
+        filename: `${sanitizeFilename(document.title)}.pdf`,
+        type: 'canvas_pdf',
+        category: 'document',
+        ext: 'pdf',
+        quality: `${canvases.length} trang`,
+        format: `Tài liệu Canvas (${canvases.length} trang)`,
+        sizeFormatted: `${canvases.length} trang`,
+        source: 'dom_canvas'
+      });
+    }
+
     if (batch.length > 0) {
       chrome.runtime.sendMessage({
         action: 'ADD_BATCH_MEDIA',
         items: batch
       });
     }
-  }
-
-  // 4. Trích xuất trang Canvas để tạo PDF (Thuần JS không dính lỗi Module)
-  function extractCanvasImages() {
-    const pages = [];
-    const canvases = document.querySelectorAll('canvas');
-    canvases.forEach((canvas, idx) => {
-      if (canvas.width < 200 || canvas.height < 200) return;
-      try {
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-        pages.push({
-          pageNumber: idx + 1,
-          width: canvas.width,
-          height: canvas.height,
-          dataUrl: dataUrl
-        });
-      } catch (e) {}
-    });
-    return pages;
   }
 
   function reportSingleMedia(item) {
@@ -281,12 +282,6 @@
   }
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'EXTRACT_CANVAS_PAGES') {
-      const pages = extractCanvasImages();
-      sendResponse({ success: true, pages: pages, title: document.title });
-      return true;
-    }
-
     if (request.action === 'SCAN_DOM_NOW') {
       scanDOMMedia();
       sendResponse({ success: true });
@@ -299,5 +294,5 @@
   } else {
     scanDOMMedia();
   }
-  setInterval(scanDOMMedia, 3000);
+  setInterval(scanDOMMedia, 2000);
 })();
