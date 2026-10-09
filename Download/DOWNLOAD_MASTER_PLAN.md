@@ -186,3 +186,7 @@ D:\GIT\Extension\Download/
      - Tải tài liệu học tập không giới hạn số trang.
      - Tải video 4K / 8K và tách riêng phụ đề tự động.
 2. **Donate / Tip:** Nút "Buy me a coffee" trực tiếp trên thanh công cụ.
+
+
+CHƯA LÀM ĐC CÁI TÀI LIỆU Á,
+VIDEO CHƯA CÓ TẢI THEO ĐỘ PHÂN GIẢI
