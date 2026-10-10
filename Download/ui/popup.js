@@ -363,19 +363,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         inputVipUrl.value = currentTab.url;
       }
 
-      btnVipResolve.addEventListener('click', () => {
+      btnVipResolve.addEventListener('click', async () => {
         const targetUrl = (inputVipUrl.value || currentTab?.url || '').trim();
         if (!targetUrl) {
           alert('Vui lòng dán link tài liệu cần tải!');
           return;
         }
-        const vip = detectVipDocPlatform(targetUrl);
-        if (vip) {
-          window.open(vip.getUrl(targetUrl), '_blank');
-        } else {
-          // Mặc định kết nối cổng trung gian DocDownloader
-          window.open(`https://docdownloader.com/?url=${encodeURIComponent(targetUrl)}`, '_blank');
-        }
+
+        const oldBtnText = btnVipResolve.innerHTML;
+        btnVipResolve.disabled = true;
+        btnVipResolve.innerHTML = `<span>⏳ Đang giải mã ngầm...</span>`;
+
+        chrome.runtime.sendMessage({
+          action: 'RESOLVE_VIP_DOC',
+          url: targetUrl,
+          tabId: currentTab ? currentTab.id : null
+        }, async (res) => {
+          if (res && res.success && res.downloadId) {
+            btnVipResolve.innerHTML = `<span>✓ Đang tải file gốc!</span>`;
+            setTimeout(() => {
+              btnVipResolve.disabled = false;
+              btnVipResolve.innerHTML = oldBtnText;
+            }, 3000);
+          } else {
+            // Nếu giải mã server cần fallback, tự động quét trích xuất DOM trực tiếp tại chỗ
+            btnVipResolve.innerHTML = `<span>⏳ Đang quét trang & gom PDF...</span>`;
+            await triggerExportPdf(btnVipResolve);
+            btnVipResolve.disabled = false;
+          }
+        });
       });
 
       mediaContainer.appendChild(vipInputSection);

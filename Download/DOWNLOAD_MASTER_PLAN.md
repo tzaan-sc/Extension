@@ -188,5 +188,5 @@ D:\GIT\Extension\Download/
 2. **Donate / Tip:** Nút "Buy me a coffee" trực tiếp trên thanh công cụ.
 
 
-CHƯA LÀM ĐC CÁI TÀI LIỆU Á,
-VIDEO CHƯA CÓ TẢI THEO ĐỘ PHÂN GIẢI
+- [x] Đã hoàn thiện tính năng Tải Tài Liệu (Background VIP Resolver & In-Browser Harvester không qua web thứ 3).
+- [x] Đã hoàn thiện Video YouTube Master Card chọn độ phân giải (1080p, 720p, 480p, 360p, MP3, Phụ đề .srt).

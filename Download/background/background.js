@@ -1,4 +1,5 @@
 import { MediaSniffer } from './sniffer.js';
+import { DocResolverService } from './doc_resolver_service.js';
 
 // Cập nhật Badge trên Extension Icon
 async function updateBadge(tabId) {
@@ -173,6 +174,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           payload: message.payload
         });
         sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'RESOLVE_VIP_DOC') {
+    (async () => {
+      try {
+        const result = await DocResolverService.resolveAndDownload(message.url, tabId);
+        if (result.type === 'direct_download') {
+          chrome.downloads.download({
+            url: result.url,
+            filename: result.filename,
+            saveAs: false
+          }, (dlId) => {
+            sendResponse({ success: true, downloadId: dlId, message: 'Đã bắt đầu tải file PDF gốc!' });
+          });
+        } else {
+          sendResponse({ success: true, result });
+        }
       } catch (err) {
         sendResponse({ success: false, error: err.message });
       }
