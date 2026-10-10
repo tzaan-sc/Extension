@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniUI</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 2l8 4.5v9L12 20l-8-4.5v-9L12 2z"></path>
+            <path d="M12 12l8-4.5"></path>
+            <path d="M12 12v8"></path>
+            <path d="M12 12L4 7.5"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>OmniUI</h1>
+          <span class="version-tag">Inspector & Figma</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="filter-tabs">
+      <button class="tab-btn active" data-tab="inspect">
+        🎯 Soi Phần Tử
+      </button>
+      <button class="tab-btn" data-tab="theme">
+        🎨 Màu & Font
+      </button>
+      <button class="tab-btn" data-tab="export">
+        📦 Xuất Toàn Trang
+      </button>
+    </nav>
+
+    <!-- Tab 1: Inspect Element -->
+    <section class="tab-content active" id="tabInspect">
+      <button id="btnStartInspect" class="btn-primary-action">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="22" y1="12" x2="18" y2="12"></line>
+          <line x1="6" y1="12" x2="2" y2="12"></line>
+          <line x1="12" y1="6" x2="12" y2="2"></line>
+          <line x1="12" y1="22" x2="12" y2="18"></line>
+        </svg>
+        <span>Bắt Đầu Soi Phần Tử Trên Trang</span>
+      </button>
+
+      <div class="code-viewer-card" id="codeViewerCard">
+        <div class="code-tabs">
+          <button class="code-tab active" data-type="figma">🎨 Figma JSON</button>
+          <button class="code-tab" data-type="css">💻 CSS</button>
+          <button class="code-tab" data-type="html">🌐 HTML</button>
+          <button class="code-tab" data-type="react">⚛️ React</button>
+        </div>
+        <textarea id="popupCodeArea" readonly placeholder="Bấm 'Bắt Đầu Soi' ở trên rồi click vào bất kỳ nút, bảng hoặc thẻ nào trên web để lấy code ngay..."></textarea>
+        <div class="code-actions">
+          <button id="btnCopyCode" class="btn-action">
+            <span>📋 Copy Code</span>
+          </button>
+          <button id="btnDownloadCode" class="btn-action secondary">
+            <span>💾 Tải File</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 2: Theme / Color Palette & Fonts -->
+    <section class="tab-content" id="tabTheme">
+      <div class="theme-section">
+        <h3 class="section-title">BẢNG MÀU ĐANG DÙNG (COLORS)</h3>
+        <div class="color-grid" id="colorGrid">
+          <span class="muted-text">Đang quét màu sắc...</span>
+        </div>
+      </div>
+
+      <div class="theme-section">
+        <h3 class="section-title">FONT CHỮ SỬ DỤNG (TYPOGRAPHY)</h3>
+        <div class="font-list" id="fontList">
+          <span class="muted-text">Đang quét font chữ...</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 3: Full Page Export -->
+    <section class="tab-content" id="tabExport">
+      <div class="export-card">
+        <div class="export-info">
+          <span class="export-icon">🎨</span>
+          <div>
+            <b>Xuất Toàn Trang Ra Figma JSON</b>
+            <p>Chuyển đổi toàn bộ cây DOM và layout trang web thành file JSON tương thích với Figma.</p>
+          </div>
+        </div>
+        <button id="btnExportFigma" class="btn-primary-action">
+          <span>Tải File Figma JSON</span>
+        </button>
+      </div>
+
+      <div class="export-card">
+        <div class="export-info">
+          <span class="export-icon">🌐</span>
+          <div>
+            <b>Tải Trọn Gói HTML & CSS Đóng Gói</b>
+            <p>Lưu toàn bộ mã nguồn HTML + Computed CSS về máy để mở offline hoặc tái sử dụng.</p>
+          </div>
+        </div>
+        <button id="btnExportHtml" class="btn-primary-action secondary">
+          <span>Tải File HTML Hoàn Chỉnh</span>
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "OmniUI - UI Inspector & Figma Exporter",
+  "version": "1.0.0",
+  "description": "Soi phần tử, trích xuất HTML, CSS, Tailwind, React và chuyển đổi giao diện website thành Figma JSON chỉ với 1 click.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "clipboardWrite"
+  ],
+  "action": {
+    "default_popup": "ui/popup.html",
+    "default_title": "OmniUI - UI & Figma Inspector"
+  },
+  "background": {
+    "service_worker": "background/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/figma_parser.js", "content/inspector.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
