@@ -255,7 +255,7 @@
 
       async function safeFetch(url) {
         try {
-          const res = await fetch(url);
+          const res = await fetch(url, { credentials: 'include' });
           if (!res.ok) return null;
           return await res.text();
         } catch (e) {
@@ -264,8 +264,8 @@
       }
 
       const urlsToTry = [
-        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
         base,
+        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
         base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
         base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`,
         base.replace('&variant=gemini', '') + '&fmt=json3',

@@ -22,7 +22,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       for (const u of urls) {
         try {
-          const res = await fetch(u);
+          const res = await fetch(u, { credentials: 'include' });
           if (res.ok) {
             const text = await res.text();
             if (text && text.trim().length > 0) {

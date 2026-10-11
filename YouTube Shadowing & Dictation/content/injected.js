@@ -212,8 +212,8 @@
       if (baseUrl) {
         const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
         const urls = [
-          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
           base,
+          base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
           base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
           base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`
         ];
@@ -221,7 +221,7 @@
         let rawText = null;
         for (const u of urls) {
           try {
-            const res = await window.fetch(u);
+            const res = await window.fetch(u, { credentials: 'include' });
             if (res.ok) {
               const txt = await res.text();
               if (txt && txt.trim().length > 0) {
