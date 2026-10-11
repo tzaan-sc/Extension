@@ -145,28 +145,58 @@ document.addEventListener('DOMContentLoaded', async () => {
   const tabButtons = document.querySelectorAll('.tab-btn');
   const btnRefresh = document.getElementById('btnRefresh');
   const btnHeaderRegionScan = document.getElementById('btnHeaderRegionScan');
+  const btnQuickAreaScan = document.getElementById('btnQuickAreaScan');
 
   async function triggerRegionScan() {
-    if (!currentTab || !currentTab.id) return;
-    if (currentTab.url?.startsWith('chrome://') || currentTab.url?.startsWith('edge://')) {
-      alert('Không thể chạy quét vùng trên trang hệ thống của trình duyệt.');
-      return;
-    }
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId: currentTab.id },
-        files: ['content/region_selector.js']
-      }).catch(() => {});
+      let tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tabs || tabs.length === 0) {
+        tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      }
+      const targetTab = (tabs && tabs[0]) || currentTab;
 
-      await chrome.tabs.sendMessage(currentTab.id, { action: 'START_REGION_CAPTURE' });
+      if (!targetTab || !targetTab.id) {
+        alert('Không tìm thấy tab trình duyệt đang hoạt động.');
+        return;
+      }
+
+      if (targetTab.url?.startsWith('chrome://') || targetTab.url?.startsWith('edge://') || targetTab.url?.startsWith('about:')) {
+        alert('Trình duyệt không cho phép chạy tiện ích trên trang cài đặt hệ thống (chrome:// hoặc edge://).\nVui lòng thử trên một bài viết hoặc trang web thông thường.');
+        return;
+      }
+
+      // Nạp script chọn vùng trực tiếp
+      await chrome.scripting.executeScript({
+        target: { tabId: targetTab.id },
+        files: ['content/region_selector.js']
+      });
+
+      // Gọi hàm khởi động ngay trên trang
+      await chrome.scripting.executeScript({
+        target: { tabId: targetTab.id },
+        func: () => {
+          if (window.__omniStartRegionCapture) {
+            window.__omniStartRegionCapture();
+          }
+        }
+      });
+
       window.close();
     } catch (e) {
       console.error('Lỗi bật quét vùng:', e);
+      if (e.message && e.message.includes('file://')) {
+        alert('Để dùng trên file cục bộ (file:///), vui lòng vào chrome://extensions -> Chi tiết tiện ích -> Bật "Cho phép truy cập vào các URL tệp" (Allow access to file URLs).');
+      } else {
+        alert('Lỗi khởi động quét vùng: ' + (e.message || e));
+      }
     }
   }
 
   if (btnHeaderRegionScan) {
     btnHeaderRegionScan.addEventListener('click', triggerRegionScan);
+  }
+  if (btnQuickAreaScan) {
+    btnQuickAreaScan.addEventListener('click', triggerRegionScan);
   }
 
   try {

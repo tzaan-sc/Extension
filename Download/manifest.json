@@ -11,7 +11,8 @@
     "scripting",
     "offscreen",
     "tabs",
-    "sidePanel"
+    "sidePanel",
+    "contextMenus"
   ],
   "host_permissions": [
     "<all_urls>"

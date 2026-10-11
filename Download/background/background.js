@@ -15,6 +15,49 @@ async function updateBadge(tabId) {
   }
 }
 
+// Cài đặt Context Menu cho phép chuột phải để quét vùng
+function setupContextMenus() {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'omni_region_scan',
+      title: '🎯 Quét vùng xuất PDF chuẩn A4',
+      contexts: ['all']
+    }, () => {
+      if (chrome.runtime.lastError) {}
+    });
+  });
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  setupContextMenus();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  setupContextMenus();
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === 'omni_region_scan' && tab && tab.id) {
+    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('edge://')) return;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content/region_selector.js']
+      });
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          if (window.__omniStartRegionCapture) {
+            window.__omniStartRegionCapture();
+          }
+        }
+      });
+    } catch (e) {
+      console.error('Lỗi chạy quét vùng từ context menu:', e);
+    }
+  }
+});
+
 // 1. Lắng nghe HTTP Web Requests để bắt link ngầm
 chrome.webRequest.onHeadersReceived.addListener(
   async (details) => {
@@ -150,24 +193,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'CAPTURE_TAB_VIEWPORT') {
-    (async () => {
-      try {
-        const windowId = sender.tab ? sender.tab.windowId : undefined;
-        chrome.tabs.captureVisibleTab(
-          windowId,
-          { format: 'png' },
-          (dataUrl) => {
-            if (chrome.runtime.lastError) {
-              sendResponse({ success: false, error: chrome.runtime.lastError.message });
-            } else {
-              sendResponse({ success: true, dataUrl });
-            }
-          }
-        );
-      } catch (err) {
-        sendResponse({ success: false, error: err.message });
+    const callback = (dataUrl) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ success: false, error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ success: true, dataUrl });
       }
-    })();
+    };
+
+    try {
+      if (sender.tab && typeof sender.tab.windowId === 'number') {
+        chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }, callback);
+      } else {
+        chrome.tabs.captureVisibleTab({ format: 'png' }, callback);
+      }
+    } catch (err) {
+      sendResponse({ success: false, error: err.message });
+    }
     return true;
   }
 
