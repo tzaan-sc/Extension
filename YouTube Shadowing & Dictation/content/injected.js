@@ -76,7 +76,39 @@
     return null;
   }
 
-  // 1. Fetch Innertube get_transcript
+  // Helper to extract segments from transcript items
+  function extractSegmentsFromItems(items, targetArray) {
+    if (!Array.isArray(items)) return;
+    items.forEach((item) => {
+      const seg = item.transcriptSegmentRenderer || item;
+      if (!seg) return;
+      const text = seg.snippet?.runs?.map(r => r.text || '').join('').trim();
+      const startMs = parseInt(seg.startMs || '0', 10);
+      const endMs = parseInt(seg.endMs || '0', 10);
+      if (text) {
+        targetArray.push({
+          id: targetArray.length,
+          start: parseFloat((startMs / 1000).toFixed(2)),
+          end: parseFloat((endMs / 1000).toFixed(2)),
+          duration: parseFloat(((endMs - startMs) / 1000).toFixed(2)),
+          text: text
+        });
+      }
+    });
+  }
+
+  function getContinuationToken(obj) {
+    if (!obj) return null;
+    if (obj.continuations && obj.continuations[0]?.nextContinuationData?.continuation) {
+      return obj.continuations[0].nextContinuationData.continuation;
+    }
+    if (obj.continuationEndpoint?.continuationCommand?.token) {
+      return obj.continuationEndpoint.continuationCommand.token;
+    }
+    return null;
+  }
+
+  // 1. Fetch Innertube get_transcript with continuation support for long videos
   async function fetchInnertubeTranscript() {
     try {
       const apiKey = window.ytcfg?.get('INNERTUBE_API_KEY');
@@ -106,27 +138,45 @@
 
         if (res.ok) {
           const data = await res.json();
-          const initialSegments = data?.actions?.[0]?.updateEngagementPanelAction?.content?.transcriptRenderer?.content?.transcriptSearchPanelRenderer?.body?.transcriptSegmentListRenderer?.initialSegments;
+          const listRenderer = data?.actions?.[0]?.updateEngagementPanelAction?.content?.transcriptRenderer?.content?.transcriptSearchPanelRenderer?.body?.transcriptSegmentListRenderer;
+          const initialSegments = listRenderer?.initialSegments;
+
           if (initialSegments && Array.isArray(initialSegments)) {
             const segments = [];
-            initialSegments.forEach((item) => {
-              const seg = item.transcriptSegmentRenderer;
-              if (!seg) return;
-              const text = seg.snippet?.runs?.map(r => r.text || '').join('').trim();
-              const startMs = parseInt(seg.startMs || '0', 10);
-              const endMs = parseInt(seg.endMs || '0', 10);
-              if (text) {
-                segments.push({
-                  id: segments.length,
-                  start: parseFloat((startMs / 1000).toFixed(2)),
-                  end: parseFloat((endMs / 1000).toFixed(2)),
-                  duration: parseFloat(((endMs - startMs) / 1000).toFixed(2)),
-                  text: text
+            extractSegmentsFromItems(initialSegments, segments);
+
+            // Xử lý Pagination / Continuation nếu video dài
+            let continuationToken = getContinuationToken(listRenderer);
+            let pageCount = 0;
+            while (continuationToken && pageCount < 80) {
+              pageCount++;
+              try {
+                console.log(`[YT-Dictation INJECTED] Fetching transcript continuation page ${pageCount}...`);
+                const contRes = await window.fetch(`https://www.youtube.com/youtubei/v1/get_transcript?key=${apiKey}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ context: context, continuation: continuationToken })
                 });
+
+                if (!contRes.ok) break;
+                const contData = await contRes.json();
+                const contList = contData?.continuationContents?.transcriptSegmentListContinuation
+                  || contData?.actions?.[0]?.updateEngagementPanelAction?.content?.transcriptRenderer?.content?.transcriptSearchPanelRenderer?.body?.transcriptSegmentListRenderer;
+                const nextItems = contList?.segments || contList?.initialSegments;
+                if (nextItems && nextItems.length > 0) {
+                  extractSegmentsFromItems(nextItems, segments);
+                  continuationToken = getContinuationToken(contList);
+                } else {
+                  break;
+                }
+              } catch (contErr) {
+                console.warn('[YT-Dictation] Continuation fetch error:', contErr);
+                break;
               }
-            });
+            }
+
             if (segments.length > 0) {
-              console.log('[YT-Dictation INJECTED] Loaded', segments.length, 'segments via get_transcript API!');
+              console.log('[YT-Dictation INJECTED] Loaded full', segments.length, 'segments via get_transcript API (pages:', pageCount + 1, ')!');
               return segments;
             }
           }
@@ -157,20 +207,8 @@
       const requestId = event.data.requestId;
       const baseUrl = event.data.baseUrl;
 
-      // 1. Try Innertube get_transcript
-      const innertubeSegments = await fetchInnertubeTranscript();
-      if (innertubeSegments && innertubeSegments.length > 0) {
-        window.postMessage({
-          source: 'yt-dictation-page',
-          type: 'FETCH_SUBTITLES_IN_PAGE_RESPONSE',
-          requestId: requestId,
-          success: true,
-          segments: innertubeSegments
-        }, '*');
-        return;
-      }
-
-      // 2. Try URL variations
+      // 1. ƯU TIÊN HÀNG ĐẦU: Fetch trực tiếp baseUrl (Timedtext API)
+      // Timedtext API trả về 100% full phụ đề của cả video dài trong 1 request duy nhất
       if (baseUrl) {
         const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
         const urls = [
@@ -204,6 +242,19 @@
           }, '*');
           return;
         }
+      }
+
+      // 2. FALLBACK: Nếu Timedtext URL không có hoặc lỗi, thử Innertube get_transcript (có hỗ trợ continuation)
+      const innertubeSegments = await fetchInnertubeTranscript();
+      if (innertubeSegments && innertubeSegments.length > 0) {
+        window.postMessage({
+          source: 'yt-dictation-page',
+          type: 'FETCH_SUBTITLES_IN_PAGE_RESPONSE',
+          requestId: requestId,
+          success: true,
+          segments: innertubeSegments
+        }, '*');
+        return;
       }
 
       window.postMessage({

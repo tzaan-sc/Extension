@@ -397,23 +397,18 @@
     checkDictation();
   }
 
-  // Render all transcript items
-  function renderTranscriptList(filterQuery = '') {
-    transcriptList.innerHTML = '';
-    if (segments.length === 0) {
-      transcriptList.innerHTML = '<div class="empty-state">Chưa có phụ đề nào. Vui lòng mở video YouTube và chọn phụ đề ở trên.</div>';
-      return;
-    }
+  // Lazy chunk rendering for transcripts to support videos with thousands of sentences
+  let currentFilteredList = [];
+  let renderedCount = 0;
+  const CHUNK_SIZE = 80;
 
-    const q = filterQuery.toLowerCase().trim();
-    let count = 0;
+  function appendTranscriptChunk() {
+    if (renderedCount >= currentFilteredList.length) return;
+    const fragment = document.createDocumentFragment();
+    const end = Math.min(renderedCount + CHUNK_SIZE, currentFilteredList.length);
 
-    segments.forEach((seg, idx) => {
-      if (q && !seg.text.toLowerCase().includes(q)) {
-        return;
-      }
-      count++;
-
+    for (let i = renderedCount; i < end; i++) {
+      const { seg, idx } = currentFilteredList[i];
       const item = document.createElement('div');
       item.className = `transcript-item ${idx === currentIndex ? 'active' : ''}`;
       item.dataset.index = idx;
@@ -428,15 +423,60 @@
         seekToSegment(idx);
       });
 
-      transcriptList.appendChild(item);
+      fragment.appendChild(item);
+    }
+
+    transcriptList.appendChild(fragment);
+    renderedCount = end;
+  }
+
+  function ensureSegmentRendered(targetIdx) {
+    while (renderedCount < currentFilteredList.length) {
+      const isAlreadyRendered = transcriptList.querySelector(`.transcript-item[data-index="${targetIdx}"]`);
+      if (isAlreadyRendered) break;
+      appendTranscriptChunk();
+    }
+  }
+
+  // Infinite scroll on transcriptList
+  transcriptList.addEventListener('scroll', () => {
+    if (transcriptList.scrollTop + transcriptList.clientHeight >= transcriptList.scrollHeight - 150) {
+      appendTranscriptChunk();
+    }
+  });
+
+  // Render all transcript items with chunking
+  function renderTranscriptList(filterQuery = '') {
+    transcriptList.innerHTML = '';
+    if (segments.length === 0) {
+      transcriptList.innerHTML = '<div class="empty-state">Chưa có phụ đề nào. Vui lòng mở video YouTube và chọn phụ đề ở trên.</div>';
+      return;
+    }
+
+    const q = filterQuery.toLowerCase().trim();
+    currentFilteredList = [];
+
+    segments.forEach((seg, idx) => {
+      if (!q || seg.text.toLowerCase().includes(q)) {
+        currentFilteredList.push({ seg, idx });
+      }
     });
 
-    if (count === 0) {
+    if (currentFilteredList.length === 0) {
       transcriptList.innerHTML = '<div class="empty-state">Không tìm thấy câu phù hợp.</div>';
+      return;
+    }
+
+    renderedCount = 0;
+    appendTranscriptChunk();
+
+    if (!q) {
+      ensureSegmentRendered(currentIndex);
     }
   }
 
   function highlightActiveTranscriptItem() {
+    ensureSegmentRendered(currentIndex);
     const items = transcriptList.querySelectorAll('.transcript-item');
     items.forEach(el => {
       const idx = parseInt(el.dataset.index, 10);

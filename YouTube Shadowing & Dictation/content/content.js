@@ -219,14 +219,15 @@
 
   // Fetch subtitles helper with in-page context and format fallbacks
   async function fetchSubtitleSegments(baseUrl) {
-    // 1. First priority: In-page fetch (Innertube + in-page URLs)
+    // 1. First priority: In-page fetch (Direct baseUrl via page context + Innertube continuation)
     try {
       const requestId = 'req_' + Math.random().toString(36).substring(2, 9);
       const inPageResult = await new Promise((resolve) => {
+        // Tăng timeout lên 15 giây cho video dài tải dữ liệu lớn
         const timer = setTimeout(() => {
           delete pendingSubtitleResolvers[requestId];
           resolve(null);
-        }, 4000);
+        }, 15000);
 
         pendingSubtitleResolvers[requestId] = (result) => {
           clearTimeout(timer);
@@ -248,48 +249,49 @@
       console.warn('[YT-Dictation] In-page fetch error:', e);
     }
 
-    // 2. Second priority: Active DOM transcript triggering
+    // 2. Second priority: Fetch trực tiếp baseUrl từ Content Script (đầy đủ cả video)
+    if (baseUrl) {
+      const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
+
+      async function safeFetch(url) {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) return null;
+          return await res.text();
+        } catch (e) {
+          return null;
+        }
+      }
+
+      const urlsToTry = [
+        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
+        base,
+        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
+        base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`,
+        base.replace('&variant=gemini', '') + '&fmt=json3',
+        base.replace('&variant=gemini', '') + '&fmt=srv3',
+        base.replace('&variant=gemini', '')
+      ];
+
+      for (const u of urlsToTry) {
+        const text = await safeFetch(u);
+        if (text && text.trim().length > 0) {
+          const segs = SubtitleParser.parse(text);
+          if (segs && segs.length > 0) return segs;
+        }
+      }
+    }
+
+    // 3. Third priority: Active DOM transcript triggering (chỉ lấy được phần nhìn thấy)
     const domSegments = await extractFromDomTranscript();
     if (domSegments && domSegments.length > 0) {
       return domSegments;
     }
 
-    // 3. Third priority: Check HTML5 video textTracks
+    // 4. Fourth priority: Check HTML5 video textTracks
     const trackSegments = extractFromTextTracks();
     if (trackSegments && trackSegments.length > 0) {
       return trackSegments;
-    }
-
-    if (!baseUrl) return [];
-    const base = baseUrl.startsWith('//') ? `https:${baseUrl}` : baseUrl;
-
-    // Helper fetch
-    async function safeFetch(url) {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        return await res.text();
-      } catch (e) {
-        return null;
-      }
-    }
-
-    const urlsToTry = [
-      base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=json3') : `${base}&fmt=json3`,
-      base,
-      base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv3') : `${base}&fmt=srv3`,
-      base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`,
-      base.replace('&variant=gemini', '') + '&fmt=json3',
-      base.replace('&variant=gemini', '') + '&fmt=srv3',
-      base.replace('&variant=gemini', '')
-    ];
-
-    for (const u of urlsToTry) {
-      const text = await safeFetch(u);
-      if (text && text.trim().length > 0) {
-        const segs = SubtitleParser.parse(text);
-        if (segs && segs.length > 0) return segs;
-      }
     }
 
     return [];
