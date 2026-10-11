@@ -192,6 +192,10 @@
       if (video && video.textTracks) {
         for (let i = 0; i < video.textTracks.length; i++) {
           const track = video.textTracks[i];
+          // Bắt buộc chuyển từ disabled sang hidden để trình duyệt tải cues vào bộ nhớ
+          if (track.mode === 'disabled') {
+            try { track.mode = 'hidden'; } catch (e) {}
+          }
           if (track.cues && track.cues.length > 0) {
             const segments = [];
             for (let j = 0; j < track.cues.length; j++) {

@@ -218,18 +218,44 @@
           base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`
         ];
 
-        let rawText = null;
-        for (const u of urls) {
+        async function fetchSubtitleText(url) {
+          // 1. Fetch với credentials
           try {
-            const res = await window.fetch(u, { credentials: 'include' });
+            const res = await window.fetch(url, { credentials: 'include' });
             if (res.ok) {
               const txt = await res.text();
-              if (txt && txt.trim().length > 0) {
-                rawText = txt;
-                break;
-              }
+              if (txt && txt.trim().length > 0) return txt;
             }
           } catch (e) {}
+
+          // 2. XHR Fallback (vượt qua các interceptor/monkeypatch của YouTube)
+          try {
+            const xhrText = await new Promise((resolve) => {
+              const xhr = new XMLHttpRequest();
+              xhr.open('GET', url, true);
+              xhr.withCredentials = true;
+              xhr.timeout = 10000;
+              xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300 && xhr.responseText && xhr.responseText.trim().length > 0) {
+                  resolve(xhr.responseText);
+                } else {
+                  resolve(null);
+                }
+              };
+              xhr.onerror = () => resolve(null);
+              xhr.ontimeout = () => resolve(null);
+              xhr.send();
+            });
+            if (xhrText) return xhrText;
+          } catch (e) {}
+
+          return null;
+        }
+
+        let rawText = null;
+        for (const u of urls) {
+          rawText = await fetchSubtitleText(u);
+          if (rawText) break;
         }
 
         if (rawText) {

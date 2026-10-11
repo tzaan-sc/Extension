@@ -181,13 +181,8 @@
     loadSelectedTrackSubtitles();
   }
 
-  async function loadSelectedTrackSubtitles() {
-    const selectedIdx = trackSelect.value;
-    if (selectedIdx === '' || !tracks[selectedIdx]) return;
-
-    const track = tracks[selectedIdx];
-    updateStatus(true, 'Đang tải phụ đề...');
-    console.log('[YT-Dictation] Loading subtitles for track:', track);
+  async function tryFetchTrack(track) {
+    if (!track || !track.baseUrl) return null;
 
     // 1. Try fetching via content script / in-page context
     let res = await sendMessageToContent({
@@ -195,7 +190,9 @@
       baseUrl: track.baseUrl
     });
 
-    console.log('[YT-Dictation] Content script / In-page result:', res);
+    if (res && res.success && res.segments && res.segments.length > 0) {
+      return res;
+    }
 
     const base = track.baseUrl.startsWith('//') ? `https:${track.baseUrl}` : track.baseUrl;
     const urlsToTry = [
@@ -205,52 +202,62 @@
       base.includes('fmt=') ? base.replace(/fmt=[^&]+/, 'fmt=srv1') : `${base}&fmt=srv1`
     ];
 
-    // 2. Background proxy fallback (bypasses all CORS and redirect constraints)
-    if (!res || !res.success || !res.segments || res.segments.length === 0) {
-      console.log('[YT-Dictation] Trying Background proxy fallback...');
-      try {
-        const bgRes = await chrome.runtime.sendMessage({
-          type: 'FETCH_URL_BACKGROUND',
-          urls: urlsToTry
-        });
-        console.log('[YT-Dictation] Background proxy response:', bgRes);
-        if (bgRes && bgRes.success && bgRes.text) {
-          const parsed = SubtitleParser.parse(bgRes.text);
-          console.log('[YT-Dictation] Parsed from background proxy:', parsed ? parsed.length : 0, 'segments');
-          if (parsed && parsed.length > 0) {
-            res = { success: true, segments: parsed };
-          }
+    // 2. Background proxy fallback
+    try {
+      const bgRes = await chrome.runtime.sendMessage({
+        type: 'FETCH_URL_BACKGROUND',
+        urls: urlsToTry
+      });
+      if (bgRes && bgRes.success && bgRes.text) {
+        const parsed = SubtitleParser.parse(bgRes.text);
+        if (parsed && parsed.length > 0) {
+          return { success: true, segments: parsed };
         }
-      } catch (bgErr) {
-        console.warn('[YT-Dictation] Background proxy fetch failed:', bgErr);
       }
-    }
+    } catch (bgErr) {}
 
     // 3. Direct fetch fallback from SidePanel context
-    if (!res || !res.success || !res.segments || res.segments.length === 0) {
-      console.log('[YT-Dictation] Trying Direct SidePanel fetch fallback...');
-      try {
-        for (const u of urlsToTry) {
-          try {
-            console.log('[YT-Dictation] Direct fetch URL:', u);
-            const fetchRes = await fetch(u, { credentials: 'include' });
-            console.log('[YT-Dictation] Direct fetch HTTP status:', fetchRes.status);
-            if (fetchRes.ok) {
-              const text = await fetchRes.text();
-              console.log('[YT-Dictation] Direct fetch response text length:', text.length);
-              const parsed = SubtitleParser.parse(text);
-              console.log('[YT-Dictation] Direct fetch parsed count:', parsed ? parsed.length : 0);
-              if (parsed && parsed.length > 0) {
-                res = { success: true, segments: parsed };
-                break;
-              }
+    try {
+      for (const u of urlsToTry) {
+        try {
+          const fetchRes = await fetch(u, { credentials: 'include' });
+          if (fetchRes.ok) {
+            const text = await fetchRes.text();
+            const parsed = SubtitleParser.parse(text);
+            if (parsed && parsed.length > 0) {
+              return { success: true, segments: parsed };
             }
-          } catch (err) {
-            console.warn('[YT-Dictation] Direct fetch error on', u, err);
           }
+        } catch (err) {}
+      }
+    } catch (e) {}
+
+    return null;
+  }
+
+  async function loadSelectedTrackSubtitles() {
+    const selectedIdx = trackSelect.value !== '' ? parseInt(trackSelect.value, 10) : 0;
+    if (isNaN(selectedIdx) || !tracks[selectedIdx]) return;
+
+    const track = tracks[selectedIdx];
+    updateStatus(true, `Đang tải: ${track.name}...`);
+    console.log('[YT-Dictation] Loading subtitles for track:', track);
+
+    let res = await tryFetchTrack(track);
+
+    // NẾU TRACK HIỆN TẠI BỊ RỖNG HOẶC LỖI: Tự động thử các track còn lại!
+    if ((!res || !res.success || !res.segments || res.segments.length === 0) && tracks.length > 1) {
+      console.log(`[YT-Dictation] Track ${selectedIdx} failed, auto-trying remaining tracks...`);
+      for (let i = 0; i < tracks.length; i++) {
+        if (i === selectedIdx) continue;
+        updateStatus(true, `Thử nạp: ${tracks[i].name}...`);
+        const fallbackRes = await tryFetchTrack(tracks[i]);
+        if (fallbackRes && fallbackRes.success && fallbackRes.segments && fallbackRes.segments.length > 0) {
+          console.log(`[YT-Dictation] Auto-switched to working track: ${tracks[i].name}`);
+          trackSelect.value = i;
+          res = fallbackRes;
+          break;
         }
-      } catch (e) {
-        console.warn('[YT-Dictation] Direct sidepanel fetch fallback failed:', e);
       }
     }
 
@@ -724,52 +731,30 @@ Vui lòng mở một video trên YouTube (youtube.com/watch?v=...) rồi bấm K
         const videoTitle = rawTitle.length > 50 ? rawTitle.substring(0, 47) + '...' : rawTitle;
         const tracksList = videoRes?.tracks || [];
 
-        // 4. Thử nạp track được chọn (hoặc track đầu tiên)
+        // 4. Thử nạp từng track để tìm track có dữ liệu
         let loadSuccess = false;
         let loadedCount = 0;
+        let workingTrackName = null;
+        const trackDetailsLog = [];
 
-        if (tracksList.length > 0) {
-          const selectedIdx = trackSelect.value !== '' ? parseInt(trackSelect.value, 10) : 0;
-          const testTrack = tracksList[selectedIdx] || tracksList[0];
-
-          // Thử nạp qua content script
-          const subRes = await sendMessageToContent({
-            type: 'FETCH_SUBTITLES',
-            baseUrl: testTrack.baseUrl
-          });
-
-          if (subRes && subRes.success && subRes.segments && subRes.segments.length > 0) {
+        for (let i = 0; i < tracksList.length; i++) {
+          const testTrack = tracksList[i];
+          const testRes = await tryFetchTrack(testTrack);
+          if (testRes && testRes.success && testRes.segments && testRes.segments.length > 0) {
             loadSuccess = true;
-            loadedCount = subRes.segments.length;
+            loadedCount = testRes.segments.length;
+            workingTrackName = testTrack.name;
+            trackSelect.value = i;
+            segments = testRes.segments;
+            totalSentenceNum.textContent = segments.length;
+            totalSegmentsCount.textContent = segments.length;
+            renderCurrentSentence();
+            renderTranscriptList();
+            trackDetailsLog.push(`• [${i}] ${testTrack.name}: ✅ Có ${loadedCount} câu`);
+            break;
           } else {
-            // Thử nạp qua background proxy
-            const base = testTrack.baseUrl.startsWith('//') ? `https:${testTrack.baseUrl}` : testTrack.baseUrl;
-            const bgRes = await chrome.runtime.sendMessage({
-              type: 'FETCH_URL_BACKGROUND',
-              urls: [base, `${base}&fmt=json3`]
-            });
-            if (bgRes && bgRes.success && bgRes.text) {
-              const parsed = SubtitleParser.parse(bgRes.text);
-              if (parsed && parsed.length > 0) {
-                loadSuccess = true;
-                loadedCount = parsed.length;
-              }
-            }
+            trackDetailsLog.push(`• [${i}] ${testTrack.name}: ⚠️ Rỗng hoặc không nạp được`);
           }
-        }
-
-        // Đánh giá lỗi & giải pháp
-        if (!isCsOk) {
-          issues.push('Trang YouTube chưa kết nối được với tiện ích.');
-          solutions.push('Nhấn F5 trên trang YouTube để làm mới kết nối.');
-        }
-
-        if (tracksList.length === 0) {
-          issues.push('Video này hiện chưa có phụ đề (CC).');
-          solutions.push('Kiểm tra nút [CC] trên trình phát video xem có phụ đề khả dụng không.');
-        } else if (!loadSuccess) {
-          issues.push('Đường dẫn phụ đề của YouTube bị hết hạn phiên tải.');
-          solutions.push('Nhấn F5 trên trang YouTube rồi chọn lại phụ đề để lấy link mới nhất.');
         }
 
         // Tạo báo cáo ngắn gọn, rõ ràng
@@ -777,22 +762,28 @@ Vui lòng mở một video trên YouTube (youtube.com/watch?v=...) rồi bấm K
         report += `----------------------------------------\n`;
         report += `1. Video: 🎬 "${videoTitle}"\n`;
         report += `2. Kết nối: ${isCsOk ? '✅ Sẵn sàng' : '❌ Chưa kết nối'}\n`;
-        report += `3. Phụ đề có sẵn: ${tracksList.length > 0 ? `✅ Tìm thấy ${tracksList.length} ngôn ngữ` : '❌ Không có'}\n`;
+        report += `3. Phụ đề phát hiện: ${tracksList.length > 0 ? `✅ Có ${tracksList.length} track` : '❌ Không có'}\n`;
         if (tracksList.length > 0) {
-          const names = tracksList.slice(0, 3).map(t => t.name).join(', ');
-          report += `   (Gồm: ${names}${tracksList.length > 3 ? '...' : ''})\n`;
+          trackDetailsLog.forEach(l => { report += `   ${l}\n`; });
         }
-        report += `4. Tải phụ đề: ${loadSuccess ? `✅ Đã tải ${loadedCount} câu (${loadedCount > 100 ? 'Đầy đủ cả video' : 'Thành công'})` : '❌ Không tải được'}\n`;
+        report += `4. Tải nội dung: ${loadSuccess ? `✅ Đã nạp ${loadedCount} câu từ "${workingTrackName}"!` : '❌ Không tải được'}\n`;
         report += `----------------------------------------\n\n`;
 
-        if (issues.length === 0) {
-          report += `🎉 KẾT LUẬN: Mọi thứ đã sẵn sàng và hoạt động tốt!\n`;
-          report += `👉 Bạn có thể bắt đầu "Chép chính tả" hoặc xem "Toàn bộ phụ đề".`;
+        if (loadSuccess) {
+          report += `🎉 KẾT LUẬN: Đã tự động kết nối và tải thành công ${loadedCount} câu!\n`;
+          report += `👉 Bạn có thể đóng bảng này và bắt đầu luyện nghe & chép chính tả ngay.`;
         } else {
           report += `⚠️ NGUYÊN NHÂN LỖI:\n`;
-          issues.forEach((iss) => { report += `• ${iss}\n`; });
+          if (!isCsOk) {
+            report += `• Trang YouTube chưa nhận diện extension (cần nhấn F5).\n`;
+          } else if (tracksList.length === 0) {
+            report += `• Video này không có phụ đề (CC).\n`;
+          } else {
+            report += `• Các track phụ đề trên video này không chứa dữ liệu câu thoại hoặc YouTube từ chối cấp dữ liệu.\n`;
+          }
           report += `\n👉 CÁCH KHẮC PHỤC NGAY:\n`;
-          solutions.forEach((sol, i) => { report += `${i + 1}. ${sol}\n`; });
+          report += `1. Bấm nút [CC] trên trình phát video YouTube để bật phụ đề hiển thị.\n`;
+          report += `2. Nhấn F5 trên trang YouTube để làm mới đường truyền và thử lại.\n`;
         }
 
         debugLogContent.textContent = report;
