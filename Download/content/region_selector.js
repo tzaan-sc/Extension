@@ -4,9 +4,8 @@
 (function () {
   'use strict';
 
-  // Nếu đã được inject trước đó, kích hoạt mở ngay và thoát
+  // Tránh inject trùng lặp
   if (window.__omniRegionSelectorInstance) {
-    window.__omniRegionSelectorInstance.start();
     return;
   }
 
@@ -779,7 +778,6 @@
     }
   });
 
-  // Tự khởi động ngay khi file vừa được load
-  regionScanner.start();
+  // Chỉ khởi động khi được yêu cầu qua window.__omniStartRegionCapture hoặc START_REGION_CAPTURE
 
 })();

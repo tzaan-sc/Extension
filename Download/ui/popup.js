@@ -214,7 +214,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await chrome.scripting.executeScript({
         target: { tabId },
-        files: ['content/content.js', 'content/region_selector.js']
+        files: ['content/content.js']
       }).catch(() => {});
     } catch (e) {}
   }
