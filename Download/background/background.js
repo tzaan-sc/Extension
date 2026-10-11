@@ -193,47 +193,49 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'CAPTURE_TAB_VIEWPORT') {
-    const format = message.format || 'jpeg';
-    const quality = typeof message.quality === 'number' ? message.quality : 92;
-    const captureOptions = format === 'jpeg' ? { format: 'jpeg', quality } : { format: 'png' };
-    const initialWinId = (sender.tab && typeof sender.tab.windowId === 'number') ? sender.tab.windowId : null;
-
-    const doCapture = (targetWinId, isRetry = false) => {
+    (async () => {
       try {
-        const cb = (dataUrl) => {
-          if (chrome.runtime.lastError) {
-            const err = chrome.runtime.lastError.message;
-            if (!isRetry && targetWinId !== null) {
-              doCapture(null, true);
-            } else {
-              sendResponse({ success: false, error: err });
-            }
-          } else if (!dataUrl) {
-            if (!isRetry && targetWinId !== null) {
-              doCapture(null, true);
-            } else {
-              sendResponse({ success: false, error: 'Không nhận được dữ liệu ảnh chụp từ trình duyệt' });
-            }
-          } else {
-            sendResponse({ success: true, dataUrl });
+        const format = message.format || 'jpeg';
+        const quality = typeof message.quality === 'number' ? message.quality : 92;
+        const captureOptions = format === 'jpeg' ? { format: 'jpeg', quality } : { format: 'png' };
+
+        let dataUrl = null;
+        let lastErrorMsg = '';
+
+        // Cách 1: Chụp tab hiển thị trong cửa sổ hiện tại (chuẩn MV3 Promise, phổ biến và ổn định nhất)
+        try {
+          dataUrl = await chrome.tabs.captureVisibleTab(captureOptions);
+        } catch (e1) {
+          lastErrorMsg = e1.message || String(e1);
+        }
+
+        // Cách 2: Nếu chưa được và có windowId cụ thể từ tab của sender, thử truyền windowId
+        if (!dataUrl && sender.tab && typeof sender.tab.windowId === 'number') {
+          try {
+            dataUrl = await chrome.tabs.captureVisibleTab(sender.tab.windowId, captureOptions);
+          } catch (e2) {
+            lastErrorMsg = e2.message || String(e2);
           }
-        };
+        }
 
-        if (targetWinId !== null) {
-          chrome.tabs.captureVisibleTab(targetWinId, captureOptions, cb);
-        } else {
-          chrome.tabs.captureVisibleTab(captureOptions, cb);
+        // Cách 3: Nếu định dạng jpeg không được hỗ trợ trên thiết bị này, thử đổi sang png
+        if (!dataUrl && format !== 'png') {
+          try {
+            dataUrl = await chrome.tabs.captureVisibleTab({ format: 'png' });
+          } catch (e3) {
+            lastErrorMsg = e3.message || String(e3);
+          }
         }
-      } catch (err) {
-        if (!isRetry && targetWinId !== null) {
-          doCapture(null, true);
+
+        if (dataUrl) {
+          sendResponse({ success: true, dataUrl });
         } else {
-          sendResponse({ success: false, error: err.message });
+          sendResponse({ success: false, error: lastErrorMsg || 'Không thể chụp ảnh màn hình' });
         }
+      } catch (fatalErr) {
+        sendResponse({ success: false, error: fatalErr.message || String(fatalErr) });
       }
-    };
-
-    doCapture(initialWinId);
+    })();
     return true;
   }
 
