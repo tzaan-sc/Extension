@@ -4,9 +4,11 @@
 (function () {
   'use strict';
 
-  // Tránh inject trùng lặp
+  // Dọn dẹp instance cũ nếu có để cho phép nạp lại mã mới nhất mà không bắt người dùng phải F5 lại trang
   if (window.__omniRegionSelectorInstance) {
-    return;
+    try {
+      window.__omniRegionSelectorInstance.destroy();
+    } catch (e) {}
   }
 
   // 1. PURE JS PDF BUILDER (PDF-1.4 Native Generator - Binary Safe)
@@ -18,20 +20,23 @@
     let currentOffset = 0;
     const encoder = new TextEncoder();
 
-    function pushString(str) {
-      const bytes = encoder.encode(str);
+    function pushBytes(bytes) {
       chunks.push(bytes);
       currentOffset += bytes.length;
     }
 
     function addLine(str) {
-      pushString(str + '\n');
+      pushBytes(encoder.encode(str + '\n'));
     }
 
     function markObject(objNum) {
       objectOffsets[objNum] = currentOffset;
       addLine(`${objNum} 0 obj`);
     }
+
+    // PDF Header (Bắt buộc cho mọi trình đọc PDF)
+    addLine('%PDF-1.4');
+    pushBytes(new Uint8Array([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]));
 
     // 1. Catalog Object
     markObject(1);
@@ -62,9 +67,12 @@
       addLine(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Contents ${contentObjNum} 0 R /Resources << /XObject << /Im${i + 1} ${imageObjNum} 0 R >> >> >>`);
       addLine('endobj');
 
-      const streamContent = `q\n${pageWidth} 0 0 ${pageHeight} 0 0 cm\n/Im${i + 1} Do\nQ`;
+      const streamContent = `q\n${pageWidth} 0 0 ${pageHeight} 0 0 cm\n/Im${i + 1} Do\nQ\n`;
+      const streamBytes = encoder.encode(streamContent);
       markObject(contentObjNum);
-      addLine(`<< /Length ${streamContent.length} >>\nstream\n${streamContent}\nendstream`);
+      addLine(`<< /Length ${streamBytes.length} >>\nstream`);
+      pushBytes(streamBytes);
+      addLine('endstream');
       addLine('endobj');
 
       const base64Data = img.dataUrl.split(',')[1];
@@ -76,9 +84,9 @@
 
       markObject(imageObjNum);
       addLine(`<< /Type /XObject /Subtype /Image /Width ${img.pixelWidth || 800} /Height ${img.pixelHeight || 1100} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.length} >>\nstream`);
-      chunks.push(imgBytes);
-      currentOffset += imgBytes.length;
-      addLine('\nendstream\nendobj');
+      pushBytes(imgBytes);
+      addLine('\nendstream');
+      addLine('endobj');
     }
 
     const startXref = currentOffset;
@@ -662,6 +670,10 @@
 
     showDiagnosticError(stepName, err, extraInfo = {}) {
       if (!this.statusPanel) return;
+      if (this.overlay) {
+        this.overlay.style.visibility = 'visible';
+        this.overlay.style.display = 'block';
+      }
       this.statusPanel.style.display = 'flex';
 
       const spinner = this.statusPanel.querySelector('#omni-status-spinner');
@@ -678,7 +690,7 @@
 
       const pMsg = this.statusPanel.querySelector('#omni-status-msg');
       if (pMsg) {
-        pMsg.textContent = err.message || 'Đã xảy ra sự cố trong quá trình xuất PDF.';
+        pMsg.textContent = (err && err.message) || String(err) || 'Đã xảy ra sự cố trong quá trình xuất PDF.';
       }
 
       const errorBox = this.statusPanel.querySelector('#omni-error-box');
@@ -691,13 +703,13 @@
           `Thời gian: ${new Date().toLocaleString()}`,
           `URL: ${window.location.href}`,
           `Bước phát sinh lỗi: ${stepName}`,
-          `Lỗi (Name): ${err.name || 'Error'}`,
-          `Thông điệp (Message): ${err.message || String(err)}`,
+          `Lỗi (Name): ${(err && err.name) || 'Error'}`,
+          `Thông điệp (Message): ${(err && err.message) || String(err)}`,
           `Kích thước vùng quét: W=${extraInfo.scanWidth || 'N/A'}, H=${extraInfo.scanHeight || 'N/A'} (Mode: ${extraInfo.mode || this.mode})`,
           `Viewport: ${window.innerWidth}x${window.innerHeight}, DPR: ${window.devicePixelRatio || 1}`,
           `Trang web: scrollHeight=${document.documentElement.scrollHeight}`,
           `Stack Trace:`,
-          err.stack || 'Không có stack trace'
+          (err && err.stack) || 'Không có stack trace'
         ].join('\n');
 
         errorTextarea.value = report;
@@ -706,7 +718,10 @@
 
     // 5. QUY TRÌNH CHỤP VÙNG, CUỘN TRANG & CHIA TRANG A4 CHỐNG CẮT
     async executeRegionCapture() {
-      if (!this.viewportRect) return;
+      if (!this.viewportRect) {
+        alert('Vui lòng kéo chuột chọn vùng tài liệu cần xuất PDF trước khi bắt đầu.');
+        return;
+      }
 
       this.actionPanel.style.display = 'none';
       this.selectionBox.style.display = 'none';
@@ -768,23 +783,20 @@
         document.documentElement.style.overflow = 'hidden';
         document.documentElement.style.scrollBehavior = 'auto';
 
-        // Tạm ẩn overlay khi chụp
-        this.overlay.style.background = 'transparent';
-        this.overlay.style.backdropFilter = 'none';
-        this.statusPanel.style.display = 'none';
-
-        currentStep = 'Bước 2: Phân bổ Master Canvas';
-        this.updateProgress(30, '📸 Bước 2: Chụp ảnh từng phần', 'Đang quét dữ liệu màn hình theo từng khung hình...');
+        currentStep = 'Bước 2: Phân bổ Master Canvas & Chụp ảnh';
+        this.updateProgress(25, '📸 Bước 2: Chụp ảnh từng khung', 'Đang quét dữ liệu màn hình theo từng khung hình...');
 
         const effectiveDpr = Math.min(dpr, 1.25);
+        const maxCanvasHeight = 16000;
+        const boundedTotalHeight = Math.min(scanTotalHeight, Math.floor(maxCanvasHeight / effectiveDpr));
 
         const masterCanvas = document.createElement('canvas');
         masterCanvas.width = Math.round(scanWidth * effectiveDpr);
-        masterCanvas.height = Math.round(scanTotalHeight * effectiveDpr);
+        masterCanvas.height = Math.round(boundedTotalHeight * effectiveDpr);
         let masterCtx = masterCanvas.getContext('2d');
         if (!masterCtx) {
           masterCanvas.width = Math.round(scanWidth);
-          masterCanvas.height = Math.round(scanTotalHeight);
+          masterCanvas.height = Math.round(boundedTotalHeight);
           masterCtx = masterCanvas.getContext('2d');
         }
         if (!masterCtx) {
@@ -799,58 +811,88 @@
         const viewportH = window.innerHeight;
         let currentScrollY = scanTop;
 
+        let lastCaptureError = '';
         const safeCaptureVisibleTab = async () => {
-          for (let attempt = 0; attempt < 10; attempt++) {
+          for (let attempt = 0; attempt < 8; attempt++) {
             const captureRes = await new Promise((resolve) => {
-              chrome.runtime.sendMessage({ action: 'CAPTURE_TAB_VIEWPORT' }, (resp) => {
+              chrome.runtime.sendMessage({
+                action: 'CAPTURE_TAB_VIEWPORT',
+                format: 'jpeg',
+                quality: 94
+              }, (resp) => {
                 if (chrome.runtime.lastError) {
                   resolve({ success: false, error: chrome.runtime.lastError.message });
                 } else {
-                  resolve(resp || { success: false, error: 'Empty response' });
+                  resolve(resp || { success: false, error: 'Phản hồi rỗng từ Background Worker' });
                 }
               });
             });
             if (captureRes && captureRes.success && captureRes.dataUrl) {
               return captureRes.dataUrl;
             }
-            // Chờ trước khi retry tránh rate limit captureVisibleTab
-            await new Promise((r) => setTimeout(r, 650));
+            lastCaptureError = (captureRes && captureRes.error) || 'Lỗi chụp màn hình không xác định';
+            console.warn(`[OmniLoader] Thử lại chụp màn hình (Lần ${attempt + 1}):`, lastCaptureError);
+            await new Promise((r) => setTimeout(r, 600));
           }
-          throw new Error('Trình duyệt giới hạn tốc độ chụp màn hình (captureVisibleTab quota). Hãy đảm bảo tab đang hiển thị và thử lại.');
+          throw new Error(`Trình duyệt không thể chụp màn hình: "${lastCaptureError}". Vui lòng đảm bảo tab đang hiển thị.`);
         };
 
         currentStep = 'Bước 2: Chụp cuộn từng màn hình';
-        while (currentScrollY < scanTop + scanTotalHeight) {
+        while (currentScrollY < scanTop + boundedTotalHeight) {
           window.scrollTo(scanLeft, currentScrollY);
-          await new Promise(r => setTimeout(r, 450));
+          await new Promise(r => setTimeout(r, 380));
+
+          // Ẩn overlay trước khi chụp để ảnh trong veo, sạch sẽ không dính khung điều khiển
+          if (this.overlay) this.overlay.style.visibility = 'hidden';
+          await new Promise(r => requestAnimationFrame(r));
 
           const dataUrl = await safeCaptureVisibleTab();
+
+          // Hiện lại overlay ngay sau khi chụp để người dùng theo dõi thanh tiến trình
+          if (this.overlay) this.overlay.style.visibility = 'visible';
+
           const capturedImg = await loadImage(dataUrl);
 
-          const sliceH = Math.min(viewportH, (scanTop + scanTotalHeight) - currentScrollY);
-          const srcW = Math.min(capturedImg.width, Math.round(scanWidth * effectiveDpr));
-          const srcH = Math.min(capturedImg.height, Math.round(sliceH * effectiveDpr));
+          const scaleX = capturedImg.width / window.innerWidth;
+          const scaleY = capturedImg.height / window.innerHeight;
+
+          const actualScrollX = window.scrollX;
+          const actualScrollY = window.scrollY;
+
+          const viewLeft = scanLeft - actualScrollX;
+          const viewTop = currentScrollY - actualScrollY;
+          const viewWidth = scanWidth;
+          const viewHeight = Math.min(viewportH, (scanTop + boundedTotalHeight) - currentScrollY);
+
+          const cropX = Math.max(0, Math.round(viewLeft * scaleX));
+          const cropY = Math.max(0, Math.round(viewTop * scaleY));
+          const cropW = Math.min(capturedImg.width - cropX, Math.round(viewWidth * scaleX));
+          const cropH = Math.min(capturedImg.height - cropY, Math.round(viewHeight * scaleY));
+
+          const destX = 0;
           const destY = Math.round((currentScrollY - scanTop) * effectiveDpr);
+          const destW = Math.round(cropW * (effectiveDpr / scaleX));
+          const destH = Math.round(cropH * (effectiveDpr / scaleY));
 
           masterCtx.drawImage(
             capturedImg,
-            0, 0, srcW, srcH,
-            0, destY, srcW, srcH
+            cropX, cropY, cropW, cropH,
+            destX, destY, destW, destH
           );
 
           currentScrollY += viewportH;
-          const progressPercent = Math.min(70, Math.round(30 + ((currentScrollY - scanTop) / scanTotalHeight) * 40));
+          const progressPercent = Math.min(70, Math.round(25 + ((currentScrollY - scanTop) / boundedTotalHeight) * 45));
           this.updateProgress(progressPercent, '📸 Bước 2: Chụp ảnh từng phần', `Đang chụp dữ liệu: ${progressPercent}%...`);
         }
 
-        this.statusPanel.style.display = 'flex';
+        if (this.overlay) this.overlay.style.visibility = 'visible';
         currentStep = 'Bước 3: Phân tích DOM chống cắt chữ';
         this.updateProgress(75, '✂️ Bước 3: Phân tích chống cắt dòng chữ', 'Đang nhận diện các phần tử DOM & ngắt trang A4 thông minh...');
 
         const targetPageH = Math.round(scanWidth * 1.4142);
         const slices = computeSmartPageSlices(
-          { left: scanLeft, top: scanTop, width: scanWidth, height: scanTotalHeight },
-          scanTotalHeight,
+          { left: scanLeft, top: scanTop, width: scanWidth, height: boundedTotalHeight },
+          boundedTotalHeight,
           targetPageH
         );
 
@@ -891,7 +933,7 @@
         }
 
         currentStep = 'Bước 5: Xuất cấu trúc PDF nhị phân';
-        this.updateProgress(95, '⏳ Bước 5: Tạo file tải về', 'Đang nén dữ liệu & xuất file PDF...');
+        this.updateProgress(92, '⏳ Bước 5: Tạo file tải về', 'Đang nén dữ liệu & xuất file PDF...');
 
         const pdfBlob = createPdfFromImages(pdfPages);
         if (!pdfBlob) throw new Error('Không tạo được file PDF từ các trang.');
@@ -900,33 +942,58 @@
         const cleanName = `${pageTitle}_QuetVung_${Date.now()}.pdf`;
 
         currentStep = 'Bước 6: Kích hoạt tải file xuống máy';
-        // 1. Tải trực tiếp bằng Blob URL trên trang (Nhanh tức thì, không bị giới hạn dung lượng)
-        const blobUrl = URL.createObjectURL(pdfBlob);
-        const downloadLink = document.createElement('a');
-        downloadLink.href = blobUrl;
-        downloadLink.download = cleanName;
-        downloadLink.style.display = 'none';
-        (document.body || document.documentElement).appendChild(downloadLink);
-        downloadLink.click();
-        setTimeout(() => {
-          downloadLink.remove();
-          URL.revokeObjectURL(blobUrl);
-        }, 15000);
+        this.updateProgress(96, '⏳ Bước 6: Lưu file', 'Đang lưu file PDF về máy tính...');
 
-        // 2. Dự phòng qua background download nếu dung lượng vừa phải
+        // 1. Chuyển Blob sang Data URL để gửi cho background downloader
+        const pdfDataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('Lỗi chuyển đổi dữ liệu PDF sang dạng tải về'));
+          reader.readAsDataURL(pdfBlob);
+        });
+
+        // 2. Tải qua Chrome Downloads API chính thức từ background
+        let downloadSuccess = false;
         try {
-          if (pdfBlob.size < 15 * 1024 * 1024) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              chrome.runtime.sendMessage({
-                action: 'DOWNLOAD_DIRECT',
-                url: reader.result,
-                filename: cleanName
-              });
-            };
-            reader.readAsDataURL(pdfBlob);
+          const dlResult = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+              action: 'DOWNLOAD_DIRECT',
+              url: pdfDataUrl,
+              filename: cleanName
+            }, (resp) => {
+              if (chrome.runtime.lastError) {
+                resolve({ success: false, error: chrome.runtime.lastError.message });
+              } else {
+                resolve(resp || { success: false });
+              }
+            });
+          });
+          if (dlResult && dlResult.success) {
+            downloadSuccess = true;
           }
-        } catch (e) {}
+        } catch (e) {
+          console.warn('[OmniLoader] Background download failed, using fallback:', e);
+        }
+
+        // 3. Dự phòng bằng thẻ <a> download qua Blob URL
+        if (!downloadSuccess) {
+          try {
+            const blobUrl = URL.createObjectURL(pdfBlob);
+            const downloadLink = document.createElement('a');
+            downloadLink.href = blobUrl;
+            downloadLink.download = cleanName;
+            downloadLink.style.display = 'none';
+            (document.body || document.documentElement).appendChild(downloadLink);
+            downloadLink.click();
+            setTimeout(() => {
+              downloadLink.remove();
+              URL.revokeObjectURL(blobUrl);
+            }, 20000);
+            downloadSuccess = true;
+          } catch (e) {
+            throw new Error('Không thể kích hoạt tải file PDF về máy: ' + (e.message || e));
+          }
+        }
 
         const spinner = this.statusPanel.querySelector('#omni-status-spinner');
         if (spinner) spinner.style.display = 'none';
@@ -934,7 +1001,7 @@
 
         setTimeout(() => {
           this.destroy();
-        }, 3500);
+        }, 4000);
 
       } catch (err) {
         console.error('OmniLoader Region Scan Error at:', currentStep, err);
@@ -945,6 +1012,9 @@
           mode: this.mode
         });
       } finally {
+        if (this.overlay) {
+          this.overlay.style.visibility = 'visible';
+        }
         document.documentElement.style.overflow = prevOverflow;
         document.documentElement.style.scrollBehavior = prevScrollBehavior;
         hiddenStickyElements.forEach(({ el, prevVis, prevDisplay }) => {

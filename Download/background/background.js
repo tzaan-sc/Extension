@@ -193,23 +193,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'CAPTURE_TAB_VIEWPORT') {
-    const callback = (dataUrl) => {
-      if (chrome.runtime.lastError) {
-        sendResponse({ success: false, error: chrome.runtime.lastError.message });
-      } else {
-        sendResponse({ success: true, dataUrl });
+    const format = message.format || 'jpeg';
+    const quality = typeof message.quality === 'number' ? message.quality : 92;
+    const captureOptions = format === 'jpeg' ? { format: 'jpeg', quality } : { format: 'png' };
+    const initialWinId = (sender.tab && typeof sender.tab.windowId === 'number') ? sender.tab.windowId : null;
+
+    const doCapture = (targetWinId, isRetry = false) => {
+      try {
+        const cb = (dataUrl) => {
+          if (chrome.runtime.lastError) {
+            const err = chrome.runtime.lastError.message;
+            if (!isRetry && targetWinId !== null) {
+              doCapture(null, true);
+            } else {
+              sendResponse({ success: false, error: err });
+            }
+          } else if (!dataUrl) {
+            if (!isRetry && targetWinId !== null) {
+              doCapture(null, true);
+            } else {
+              sendResponse({ success: false, error: 'Không nhận được dữ liệu ảnh chụp từ trình duyệt' });
+            }
+          } else {
+            sendResponse({ success: true, dataUrl });
+          }
+        };
+
+        if (targetWinId !== null) {
+          chrome.tabs.captureVisibleTab(targetWinId, captureOptions, cb);
+        } else {
+          chrome.tabs.captureVisibleTab(captureOptions, cb);
+        }
+      } catch (err) {
+        if (!isRetry && targetWinId !== null) {
+          doCapture(null, true);
+        } else {
+          sendResponse({ success: false, error: err.message });
+        }
       }
     };
 
-    try {
-      if (sender.tab && typeof sender.tab.windowId === 'number') {
-        chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }, callback);
-      } else {
-        chrome.tabs.captureVisibleTab({ format: 'png' }, callback);
-      }
-    } catch (err) {
-      sendResponse({ success: false, error: err.message });
-    }
+    doCapture(initialWinId);
     return true;
   }
 
