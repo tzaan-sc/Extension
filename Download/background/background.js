@@ -193,50 +193,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'CAPTURE_TAB_VIEWPORT') {
-    (async () => {
+    const format = message.format || 'jpeg';
+    const quality = typeof message.quality === 'number' ? message.quality : 90;
+    const captureOptions = format === 'jpeg' ? { format: 'jpeg', quality } : { format: 'png' };
+
+    // Đảm bảo cửa sổ và tab đang được kích hoạt để tránh lỗi "tab's window must be focused"
+    if (sender.tab && typeof sender.tab.windowId === 'number') {
       try {
-        const format = message.format || 'jpeg';
-        const quality = typeof message.quality === 'number' ? message.quality : 92;
-        const captureOptions = format === 'jpeg' ? { format: 'jpeg', quality } : { format: 'png' };
+        chrome.windows.update(sender.tab.windowId, { focused: true });
+      } catch (e) {}
+    }
 
-        let dataUrl = null;
-        let lastErrorMsg = '';
-
-        // Cách 1: Chụp tab hiển thị trong cửa sổ hiện tại (chuẩn MV3 Promise, phổ biến và ổn định nhất)
-        try {
-          dataUrl = await chrome.tabs.captureVisibleTab(captureOptions);
-        } catch (e1) {
-          lastErrorMsg = e1.message || String(e1);
-        }
-
-        // Cách 2: Nếu chưa được và có windowId cụ thể từ tab của sender, thử truyền windowId
-        if (!dataUrl && sender.tab && typeof sender.tab.windowId === 'number') {
-          try {
-            dataUrl = await chrome.tabs.captureVisibleTab(sender.tab.windowId, captureOptions);
-          } catch (e2) {
-            lastErrorMsg = e2.message || String(e2);
+    // Chụp trực tiếp bằng callback chuẩn và truyền rõ ràng null cho windowId (cửa sổ hiện tại)
+    chrome.tabs.captureVisibleTab(null, captureOptions, (dataUrl) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        console.warn('[OmniLoader] Lỗi chụp tab lần 1 (JPEG):', err.message);
+        // Thử lại ngay với format PNG
+        chrome.tabs.captureVisibleTab(null, { format: 'png' }, (pngDataUrl) => {
+          const secondErr = chrome.runtime.lastError;
+          if (secondErr) {
+            console.error('[OmniLoader] Lỗi chụp tab lần 2 (PNG):', secondErr.message);
+            sendResponse({ success: false, error: secondErr.message || err.message });
+          } else if (pngDataUrl) {
+            sendResponse({ success: true, dataUrl: pngDataUrl });
+          } else {
+            sendResponse({ success: false, error: err.message || 'Không nhận được dữ liệu ảnh chụp' });
           }
-        }
-
-        // Cách 3: Nếu định dạng jpeg không được hỗ trợ trên thiết bị này, thử đổi sang png
-        if (!dataUrl && format !== 'png') {
-          try {
-            dataUrl = await chrome.tabs.captureVisibleTab({ format: 'png' });
-          } catch (e3) {
-            lastErrorMsg = e3.message || String(e3);
-          }
-        }
-
-        if (dataUrl) {
-          sendResponse({ success: true, dataUrl });
-        } else {
-          sendResponse({ success: false, error: lastErrorMsg || 'Không thể chụp ảnh màn hình' });
-        }
-      } catch (fatalErr) {
-        sendResponse({ success: false, error: fatalErr.message || String(fatalErr) });
+        });
+      } else if (!dataUrl) {
+        sendResponse({ success: false, error: 'Không nhận được dữ liệu ảnh chụp từ trình duyệt' });
+      } else {
+        sendResponse({ success: true, dataUrl });
       }
-    })();
-    return true;
+    });
+
+    return true; // Bắt buộc return true để giữ kênh kết nối mở cho callback bất đồng bộ
   }
 
   if (message.action === 'TRIGGER_REGION_SCAN_TAB') {
