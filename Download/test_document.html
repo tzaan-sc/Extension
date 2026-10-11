@@ -144,7 +144,10 @@
   <div class="test-article-section" id="testArticleSection" style="max-width: 800px; width: 100%; margin-top: 30px; background: #ffffff; color: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 4px 25px rgba(0,0,0,0.4);">
     <div style="background: linear-gradient(135deg, #10b981, #0284c7); color: #fff; padding: 14px 18px; border-radius: 8px; margin-bottom: 22px;">
       <h2 style="font-size: 18px; margin: 0; font-weight: 700;">🎯 KHU VỰC THỬ NGHIỆM: QUÉT VÙNG XUẤT PDF CHỐNG CẮT DÒNG</h2>
-      <p style="font-size: 13px; margin-top: 6px; color: #e0f2fe; line-height: 1.5;">Mở OmniLoader -> Bấm <b>"🎯 Quét Vùng Ra PDF"</b> (hoặc icon quét vùng góc trên) -> Kéo chuột quét từ bài viết này cuộn xuống dưới để xuất PDF chuẩn A4, đảm bảo chữ, ảnh & bảng biểu không bị cắt ngang giữa chừng!</p>
+      <p style="font-size: 13px; margin-top: 6px; color: #e0f2fe; line-height: 1.5;">Bấm nút bên dưới (hoặc bấm trên icon OmniLoader / click chuột phải) ➔ Kéo chuột quét khu vực bài viết này rồi xuất PDF chuẩn A4!</p>
+      <button id="btnTestPageScan" style="background: #ffffff; color: #0284c7; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 13.5px; margin-top: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); display: inline-flex; align-items: center; gap: 6px;">
+        <span>🚀 Bấm Vào Đây Để Thử Quét Vùng Ngay</span>
+      </button>
     </div>
 
     <h1 style="font-size: 26px; color: #0f172a; margin-bottom: 14px; font-weight: 800;">Nghiên cứu Ứng dụng Trí tuệ Nhân tạo trong Xử lý Ngôn ngữ Tự nhiên & Học Máy</h1>
@@ -330,6 +333,11 @@
         '* Deep Learning Specialization - Andrew Ng',
         '* Pattern Recognition and Machine Learning - Christopher Bishop'
       ]);
+
+      // Kích hoạt quét vùng trực tiếp khi bấm nút trên trang
+      document.getElementById('btnTestPageScan')?.addEventListener('click', () => {
+        window.postMessage({ type: 'OMNI_START_REGION_SCAN' }, '*');
+      });
     });
   </script>
 </body>

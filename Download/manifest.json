@@ -36,7 +36,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content/content.js", "content/region_selector.js"],
+      "js": ["content/content.js"],
       "run_at": "document_start"
     }
   ],
@@ -44,6 +44,7 @@
     {
       "resources": [
         "content/injected.js",
+        "content/region_selector.js",
         "icons/*"
       ],
       "matches": ["<all_urls>"]

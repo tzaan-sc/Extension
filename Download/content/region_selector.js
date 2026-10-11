@@ -422,7 +422,10 @@
         document.head.appendChild(style);
       }
 
-      document.body.appendChild(this.overlay);
+      const targetParent = document.body || document.documentElement;
+      if (targetParent) {
+        targetParent.appendChild(this.overlay);
+      }
 
       this.selectionBox = this.overlay.querySelector('#omniloader-selection-box');
       this.actionPanel = this.overlay.querySelector('#omniloader-action-panel');
@@ -767,7 +770,7 @@
   window.__omniRegionSelectorInstance = regionScanner;
   window.__omniStartRegionCapture = () => regionScanner.start();
 
-  // Lắng nghe lệnh khởi động từ Extension Popup
+  // Lắng nghe lệnh khởi động từ Extension Popup hoặc Service Worker
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'START_REGION_CAPTURE') {
       regionScanner.start();
@@ -776,7 +779,7 @@
     }
   });
 
-  // Tự động kích hoạt khi được tiêm trực tiếp
+  // Tự khởi động ngay khi file vừa được load
   regionScanner.start();
 
 })();

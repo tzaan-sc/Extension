@@ -38,6 +38,14 @@
     if (event.data.type === 'OMNILOADER_YOUTUBE_DATA') {
       handleYouTubeData(event.data);
     }
+
+    if (event.data.type === 'OMNI_START_REGION_SCAN') {
+      if (window.__omniStartRegionCapture) {
+        window.__omniStartRegionCapture();
+      } else {
+        chrome.runtime.sendMessage({ action: 'TRIGGER_REGION_SCAN_TAB' });
+      }
+    }
   });
 
   function handleYouTubeData(data) {

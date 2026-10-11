@@ -213,6 +213,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.action === 'TRIGGER_REGION_SCAN_TAB') {
+    (async () => {
+      const targetTabId = sender.tab ? sender.tab.id : message.tabId;
+      if (targetTabId) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            files: ['content/region_selector.js']
+          });
+          await chrome.scripting.executeScript({
+            target: { tabId: targetTabId },
+            func: () => {
+              if (window.__omniStartRegionCapture) {
+                window.__omniStartRegionCapture();
+              }
+            }
+          });
+          sendResponse({ success: true });
+        } catch (e) {
+          sendResponse({ success: false, error: e.message });
+        }
+      }
+    })();
+    return true;
+  }
+
   if (message.action === 'EXTRACT_AUDIO') {
     (async () => {
       try {
