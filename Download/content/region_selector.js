@@ -263,15 +263,29 @@
       this.selectionBox = null;
       this.actionPanel = null;
       this.statusPanel = null;
+      this.endGuideline = null;
+      this.endPickerBar = null;
+      this.pickerLiveInfo = null;
+
       this.isDragging = false;
+      this.isPickingEnd = false;
       this.startX = 0;
       this.startY = 0;
+      this.lastClientY = 0;
+
       this.viewportRect = null;
-      this.mode = 'scroll_down'; // 'scroll_down' | 'box_only'
+      this.scanDocTop = null;
+      this.scanDocLeft = null;
+      this.scanDocWidth = null;
+      this.scanDocHeight = null;
+      this.endPointY = null;
+
+      this.mode = 'scroll_down'; // 'scroll_down' | 'pick_end' | 'box_only'
       this.boundMouseDown = this.onMouseDown.bind(this);
       this.boundMouseMove = this.onMouseMove.bind(this);
       this.boundMouseUp = this.onMouseUp.bind(this);
       this.boundKeyDown = this.onKeyDown.bind(this);
+      this.boundWheel = this.onWheel.bind(this);
     }
 
     start() {
@@ -354,6 +368,96 @@
           ">0 × 0 px</div>
         </div>
 
+        <!-- Thước ngắm chọn điểm dừng kết thúc -->
+        <div id="omniloader-end-guideline" style="
+          position: fixed;
+          left: 0; right: 0; top: 0;
+          height: 3px;
+          background: #f43f5e;
+          box-shadow: 0 0 12px #f43f5e, 0 0 24px rgba(244, 63, 94, 0.8);
+          pointer-events: none;
+          display: none;
+          z-index: 2147483645;
+        ">
+          <div id="omni-end-guideline-badge" style="
+            position: absolute;
+            right: 24px; top: -14px;
+            background: #e11d48;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 12px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          ">
+            <span>🛑 ĐIỂM DỪNG QUÉT (Nhấp chuột để chốt)</span>
+          </div>
+        </div>
+
+        <!-- Thanh công cụ nổi khi đang cuộn chọn điểm kết thúc -->
+        <div id="omniloader-end-picker-bar" style="
+          position: fixed;
+          bottom: 24px; left: 50%;
+          transform: translateX(-50%);
+          background: #0f172a;
+          border: 1px solid #38bdf8;
+          box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(56, 189, 248, 0.35);
+          padding: 12px 20px;
+          border-radius: 14px;
+          color: #f8fafc;
+          z-index: 2147483647;
+          display: none;
+          align-items: center;
+          gap: 16px;
+          cursor: default;
+        ">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 18px;">📍</span>
+            <div>
+              <div style="font-size: 13px; font-weight: 700; color: #38bdf8;">ĐANG CHỌN ĐIỂM KẾT THÚC</div>
+              <div style="font-size: 11px; color: #94a3b8;">Cuộn trang và nhấp chuột hoặc bấm nút để chốt vị trí dừng</div>
+            </div>
+          </div>
+          <div id="omni-picker-live-info" style="
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 11.5px;
+            color: #f8fafc;
+            font-weight: 600;
+            white-space: nowrap;
+          ">Y: 0 px | Cao: 0 px</div>
+          <div style="display: flex; gap: 8px;">
+            <button id="omni-btn-confirm-end" type="button" style="
+              background: linear-gradient(135deg, #10b981, #0284c7);
+              color: #fff;
+              border: none;
+              padding: 8px 14px;
+              border-radius: 8px;
+              font-size: 12px;
+              font-weight: 700;
+              cursor: pointer;
+              white-space: nowrap;
+            ">✓ Chốt điểm dừng tại đây</button>
+            <button id="omni-btn-cancel-end" type="button" style="
+              background: rgba(255, 255, 255, 0.08);
+              color: #cbd5e1;
+              border: 1px solid rgba(255, 255, 255, 0.15);
+              padding: 8px 12px;
+              border-radius: 8px;
+              font-size: 12px;
+              font-weight: 600;
+              cursor: pointer;
+              white-space: nowrap;
+            ">✕ Hủy</button>
+          </div>
+        </div>
+
         <div id="omniloader-action-panel" style="
           position: fixed;
           background: #0f172a;
@@ -366,7 +470,7 @@
           display: none;
           flex-direction: column;
           gap: 12px;
-          width: 330px;
+          width: 340px;
           cursor: default;
         ">
           <div style="display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 700; color: #38bdf8; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 8px;">
@@ -378,8 +482,37 @@
             <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #cbd5e1; cursor: pointer; padding: 6px 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.03);">
               <input type="radio" name="omni-scan-mode" value="scroll_down" checked style="margin-top: 2px;">
               <div>
-                <b style="color: #38bdf8;">Quét từ vùng này xuống hết trang</b>
-                <div style="font-size: 10.5px; color: #94a3b8; margin-top: 2px;">Tự động cuộn nạp toàn bộ bài viết, chống cắt ngang dòng chữ & ngắt trang A4 chuẩn.</div>
+                <b style="color: #38bdf8;">Quét từ vùng này xuống hết đáy trang</b>
+                <div style="font-size: 10.5px; color: #94a3b8; margin-top: 2px;">Tự động cuộn nạp 100% đến cuối trang web, chống cắt ngang dòng chữ & ngắt trang A4 chuẩn.</div>
+              </div>
+            </label>
+
+            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #cbd5e1; cursor: pointer; padding: 6px 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.03);">
+              <input type="radio" name="omni-scan-mode" value="pick_end" style="margin-top: 2px;">
+              <div style="width: 100%;">
+                <b style="color: #f43f5e;">Cuộn chọn điểm dừng kết thúc (Chặn dưới)</b>
+                <div style="font-size: 10.5px; color: #94a3b8; margin-top: 2px;">Tự chọn vị trí kết thúc bài viết để không dính phần bình luận hoặc chân trang thừa.</div>
+                
+                <button id="omni-btn-pick-end-action" type="button" style="
+                  margin-top: 6px;
+                  width: 100%;
+                  background: rgba(244, 63, 94, 0.15);
+                  border: 1px solid rgba(244, 63, 94, 0.5);
+                  color: #fda4af;
+                  padding: 6px 10px;
+                  border-radius: 6px;
+                  font-size: 11px;
+                  font-weight: 700;
+                  cursor: pointer;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  gap: 6px;
+                  transition: all 0.2s;
+                ">
+                  <span>📍 Bấm để cuộn & chọn điểm dừng</span>
+                </button>
+                <div id="omni-pick-end-status" style="margin-top: 4px; font-size: 10.5px; color: #fbbf24; font-weight: 600;">(Chưa chọn điểm dừng)</div>
               </div>
             </label>
 
@@ -503,9 +636,13 @@
       this.selectionBox = this.overlay.querySelector('#omniloader-selection-box');
       this.actionPanel = this.overlay.querySelector('#omniloader-action-panel');
       this.statusPanel = this.overlay.querySelector('#omniloader-status-panel');
+      this.endGuideline = this.overlay.querySelector('#omniloader-end-guideline');
+      this.endPickerBar = this.overlay.querySelector('#omniloader-end-picker-bar');
+      this.pickerLiveInfo = this.overlay.querySelector('#omni-picker-live-info');
 
-      // Gắn sự kiện chuột
+      // Gắn sự kiện chuột & con lăn
       this.overlay.addEventListener('mousedown', this.boundMouseDown);
+      this.overlay.addEventListener('wheel', this.boundWheel, { passive: false });
       window.addEventListener('mousemove', this.boundMouseMove);
       window.addEventListener('mouseup', this.boundMouseUp);
       document.addEventListener('keydown', this.boundKeyDown);
@@ -516,13 +653,58 @@
         this.actionPanel.style.display = 'none';
         this.selectionBox.style.display = 'none';
         this.viewportRect = null;
+        this.scanDocTop = null;
+        this.scanDocLeft = null;
+        this.scanDocWidth = null;
+        this.scanDocHeight = null;
+        this.endPointY = null;
+        const statusEl = this.overlay.querySelector('#omni-pick-end-status');
+        if (statusEl) {
+          statusEl.textContent = '(Chưa chọn điểm dừng)';
+          statusEl.style.color = '#fbbf24';
+        }
       });
 
       this.overlay.querySelector('#omni-btn-start').addEventListener('click', () => {
         const selectedMode = this.overlay.querySelector('input[name="omni-scan-mode"]:checked')?.value || 'scroll_down';
         this.mode = selectedMode;
+
+        if (this.mode === 'pick_end' && !this.endPointY) {
+          this.startPickingEndPoint();
+          return;
+        }
+
         this.executeRegionCapture();
       });
+
+      // Nút kích hoạt chọn điểm dừng
+      const btnPickEnd = this.overlay.querySelector('#omni-btn-pick-end-action');
+      if (btnPickEnd) {
+        btnPickEnd.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const radio = this.overlay.querySelector('input[name="omni-scan-mode"][value="pick_end"]');
+          if (radio) radio.checked = true;
+          this.startPickingEndPoint();
+        });
+      }
+
+      // Nút xác nhận điểm dừng trên thanh nổi đáy màn hình
+      const btnConfirmEnd = this.overlay.querySelector('#omni-btn-confirm-end');
+      if (btnConfirmEnd) {
+        btnConfirmEnd.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.confirmEndPoint(this.lastClientY);
+        });
+      }
+
+      // Nút hủy trên thanh nổi đáy màn hình
+      const btnCancelEnd = this.overlay.querySelector('#omni-btn-cancel-end');
+      if (btnCancelEnd) {
+        btnCancelEnd.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.cancelPickingEndPoint();
+        });
+      }
 
       // Xử lý nút trong hộp chẩn đoán lỗi
       const btnErrorClose = this.overlay.querySelector('#omni-btn-error-close');
@@ -553,19 +735,114 @@
 
       this.actionPanel.addEventListener('mousedown', (e) => e.stopPropagation());
       this.statusPanel.addEventListener('mousedown', (e) => e.stopPropagation());
+      this.endPickerBar.addEventListener('mousedown', (e) => e.stopPropagation());
+    }
+
+    startPickingEndPoint() {
+      this.isPickingEnd = true;
+      this.actionPanel.style.display = 'none';
+      this.endPickerBar.style.display = 'flex';
+      this.endGuideline.style.display = 'block';
+      this.overlay.style.cursor = 'row-resize';
+
+      const initialClientY = Math.round(window.innerHeight * 0.7);
+      this.lastClientY = initialClientY;
+      this.updatePickingGuideline(initialClientY);
+    }
+
+    stopPickingEndPoint() {
+      this.isPickingEnd = false;
+      this.endPickerBar.style.display = 'none';
+      this.endGuideline.style.display = 'none';
+      this.overlay.style.cursor = 'crosshair';
+    }
+
+    updatePickingGuideline(clientY) {
+      if (!this.endGuideline) return;
+      this.endGuideline.style.top = `${clientY}px`;
+
+      const startTop = this.scanDocTop !== null ? this.scanDocTop : Math.round(window.scrollY);
+      const currentDocY = Math.round(window.scrollY + clientY);
+      const heightFromStart = Math.max(0, currentDocY - startTop);
+      const scanWidth = this.scanDocWidth || 800;
+      const estPages = Math.max(1, Math.ceil(heightFromStart / (scanWidth * 1.4142)));
+
+      if (this.pickerLiveInfo) {
+        this.pickerLiveInfo.textContent = `Vị trí dừng: Y=${currentDocY}px | Chiều cao: ${heightFromStart}px | ~${estPages} trang A4`;
+      }
+
+      const badge = this.endGuideline.querySelector('#omni-end-guideline-badge');
+      if (badge) {
+        badge.textContent = `🛑 ĐIỂM DỪNG: Y=${currentDocY}px (Cao ${heightFromStart}px) - Click để chốt`;
+      }
+    }
+
+    confirmEndPoint(clientY) {
+      const cY = (clientY !== undefined && clientY !== null) ? clientY : this.lastClientY;
+      const startTop = this.scanDocTop !== null ? this.scanDocTop : Math.round(window.scrollY);
+      const targetDocY = Math.round(window.scrollY + cY);
+
+      this.endPointY = Math.max(startTop + 60, targetDocY);
+      this.stopPickingEndPoint();
+
+      const radio = this.overlay.querySelector('input[name="omni-scan-mode"][value="pick_end"]');
+      if (radio) radio.checked = true;
+
+      const statusEl = this.overlay.querySelector('#omni-pick-end-status');
+      if (statusEl) {
+        const totalH = this.endPointY - startTop;
+        const scanWidth = this.scanDocWidth || 800;
+        const estPages = Math.max(1, Math.ceil(totalH / (scanWidth * 1.4142)));
+        statusEl.innerHTML = `✓ Đã chốt: Y=${this.endPointY}px (Cao: ${totalH}px, ~${estPages} trang A4)`;
+        statusEl.style.color = '#10b981';
+      }
+
+      this.actionPanel.style.display = 'flex';
+      const panelWidth = 340;
+      const panelHeight = 240;
+      let panelLeft = Math.max(20, Math.min(window.innerWidth - panelWidth - 20, (window.innerWidth - panelWidth) / 2));
+      let panelTop = Math.max(20, Math.min(window.innerHeight - panelHeight - 20, (window.innerHeight - panelHeight) / 2));
+      this.actionPanel.style.left = `${panelLeft}px`;
+      this.actionPanel.style.top = `${panelTop}px`;
+    }
+
+    cancelPickingEndPoint() {
+      this.stopPickingEndPoint();
+      this.actionPanel.style.display = 'flex';
+    }
+
+    onWheel(e) {
+      if (this.isPickingEnd) {
+        e.preventDefault();
+        window.scrollBy({ top: e.deltaY, behavior: 'auto' });
+        this.updatePickingGuideline(this.lastClientY);
+      }
     }
 
     onKeyDown(e) {
-      if (e.key === 'Escape') this.destroy();
+      if (e.key === 'Escape') {
+        if (this.isPickingEnd) {
+          this.cancelPickingEndPoint();
+        } else {
+          this.destroy();
+        }
+      }
     }
 
     onMouseDown(e) {
       if (e.button !== 0) return;
       if (this.actionPanel && this.actionPanel.contains(e.target)) return;
       if (this.statusPanel && this.statusPanel.contains(e.target)) return;
+      if (this.endPickerBar && this.endPickerBar.contains(e.target)) return;
+
+      if (this.isPickingEnd) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.confirmEndPoint(e.clientY);
+        return;
+      }
 
       this.isDragging = true;
-      // DÙNG clientX/clientY vì overlay có position: fixed!
       this.startX = e.clientX;
       this.startY = e.clientY;
 
@@ -578,6 +855,13 @@
     }
 
     onMouseMove(e) {
+      this.lastClientY = e.clientY;
+
+      if (this.isPickingEnd) {
+        this.updatePickingGuideline(e.clientY);
+        return;
+      }
+
       if (!this.isDragging) return;
 
       const currentX = e.clientX;
@@ -598,6 +882,7 @@
     }
 
     onMouseUp(e) {
+      if (this.isPickingEnd) return;
       if (!this.isDragging) return;
       this.isDragging = false;
 
@@ -632,13 +917,17 @@
       }
 
       this.viewportRect = { left, top, width, height };
+      this.scanDocTop = Math.round(top + window.scrollY);
+      this.scanDocLeft = Math.round(left + window.scrollX);
+      this.scanDocWidth = width;
+      this.scanDocHeight = height;
 
       // Hiển thị Action Panel
       this.actionPanel.style.display = 'flex';
       this.overlay.querySelector('#omni-panel-size').textContent = `${width} × ${height} px`;
 
-      const panelWidth = 330;
-      const panelHeight = 220;
+      const panelWidth = 340;
+      const panelHeight = 240;
 
       let panelLeft = left;
       let panelTop = top + height + 12;
@@ -765,29 +1054,35 @@
 
         const maxDocHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, window.innerHeight);
 
-        // Chuyển đổi từ toạ độ Viewport sang toạ độ Tuyệt đối của trang web
-        const scanLeft = Math.max(0, Math.round(this.viewportRect.left + initialScrollX));
-        const scanTop = Math.max(0, Math.round(this.viewportRect.top + initialScrollY));
-        scanWidth = Math.round(this.viewportRect.width);
-        const scanBoxHeight = Math.round(this.viewportRect.height);
+        // Chuyển đổi từ toạ độ sang toạ độ Tuyệt đối của trang web
+        const scanLeft = this.scanDocLeft !== null ? this.scanDocLeft : Math.max(0, Math.round(this.viewportRect.left + initialScrollX));
+        const scanTop = this.scanDocTop !== null ? this.scanDocTop : Math.max(0, Math.round(this.viewportRect.top + initialScrollY));
+        scanWidth = this.scanDocWidth || Math.round(this.viewportRect.width);
+        const scanBoxHeight = this.scanDocHeight || Math.round(this.viewportRect.height);
 
-        // Giới hạn chiều cao an toàn tối đa để trình duyệt không bị sập bộ nhớ Canvas (tối đa 15000px)
-        const rawTotalHeight = this.mode === 'scroll_down'
-          ? Math.max(maxDocHeight - scanTop, scanBoxHeight)
-          : scanBoxHeight;
-        scanTotalHeight = Math.min(rawTotalHeight, 15000);
+        // Xác định chính xác chiều cao cần quét theo chế độ người dùng đã chọn
+        if (this.mode === 'pick_end' && this.endPointY) {
+          scanTotalHeight = Math.max(scanBoxHeight, this.endPointY - scanTop);
+        } else if (this.mode === 'scroll_down') {
+          // Quét 100% toàn bộ trang đến đáy (Không còn bị giới hạn 15000px cũ)
+          scanTotalHeight = Math.max(maxDocHeight - scanTop, scanBoxHeight);
+        } else {
+          // box_only
+          scanTotalHeight = scanBoxHeight;
+        }
 
-        // Cuộn nạp lười nếu là chế độ cuộn trang
-        if (this.mode === 'scroll_down') {
+        // Cuộn nạp lười nếu là chế độ cuộn trang hoặc chọn điểm kết thúc
+        if (this.mode === 'scroll_down' || this.mode === 'pick_end') {
           const scrollStep = Math.max(window.innerHeight * 0.8, 500);
           let curr = scanTop;
-          while (curr < scanTop + scanTotalHeight) {
+          const targetEndScroll = scanTop + scanTotalHeight;
+          while (curr < targetEndScroll) {
             window.scrollTo(scanLeft, curr);
             curr += scrollStep;
-            await new Promise(r => setTimeout(r, 120));
+            await new Promise(r => setTimeout(r, 100));
           }
           window.scrollTo(scanLeft, scanTop);
-          await new Promise(r => setTimeout(r, 250));
+          await new Promise(r => setTimeout(r, 200));
         }
 
         // Tạm ẩn các phần tử fixed / sticky
@@ -803,30 +1098,64 @@
         document.documentElement.style.overflow = 'hidden';
         document.documentElement.style.scrollBehavior = 'auto';
 
-        currentStep = 'Bước 2: Phân bổ Master Canvas & Chụp ảnh';
+        currentStep = 'Bước 2: Phân bổ Chunked Canvas & Chụp ảnh';
         this.updateProgress(25, '📸 Bước 2: Chụp ảnh từng khung', 'Đang quét dữ liệu màn hình theo từng khung hình...');
 
         const effectiveDpr = Math.min(dpr, 1.25);
-        const maxCanvasHeight = 16000;
-        const boundedTotalHeight = Math.min(scanTotalHeight, Math.floor(maxCanvasHeight / effectiveDpr));
-
-        const masterCanvas = document.createElement('canvas');
-        masterCanvas.width = Math.round(scanWidth * effectiveDpr);
-        masterCanvas.height = Math.round(boundedTotalHeight * effectiveDpr);
-        let masterCtx = masterCanvas.getContext('2d');
-        if (!masterCtx) {
-          masterCanvas.width = Math.round(scanWidth);
-          masterCanvas.height = Math.round(boundedTotalHeight);
-          masterCtx = masterCanvas.getContext('2d');
-        }
-        if (!masterCtx) {
-          throw new Error('Trình duyệt không đủ bộ nhớ đồ họa để phân bổ Canvas chụp ảnh.');
-        }
+        const totalCanvasHeight = Math.round(scanTotalHeight * effectiveDpr);
+        const totalCanvasWidth = Math.round(scanWidth * effectiveDpr);
 
         const bodyBg = window.getComputedStyle(document.body).backgroundColor;
         const pageBgColor = (bodyBg && bodyBg !== 'transparent' && bodyBg !== 'rgba(0, 0, 0, 0)') ? bodyBg : '#ffffff';
-        masterCtx.fillStyle = pageBgColor;
-        masterCtx.fillRect(0, 0, masterCanvas.width, masterCanvas.height);
+
+        // Hệ thống Canvas Chunks: Chia nhỏ Canvas theo khối an toàn 7,000px chiều cao
+        // Giúp tránh hoàn toàn giới hạn kích thước Canvas của GPU/Chromium và không lo tràn bộ nhớ!
+        const CHUNK_MAX_HEIGHT_PX = 7000;
+        const numChunks = Math.ceil(totalCanvasHeight / CHUNK_MAX_HEIGHT_PX);
+
+        const canvasChunks = [];
+        for (let c = 0; c < numChunks; c++) {
+          const cCanvas = document.createElement('canvas');
+          cCanvas.width = totalCanvasWidth;
+          const chunkH = Math.min(CHUNK_MAX_HEIGHT_PX, totalCanvasHeight - c * CHUNK_MAX_HEIGHT_PX);
+          cCanvas.height = chunkH;
+          const cCtx = cCanvas.getContext('2d');
+          if (!cCtx) {
+            throw new Error(`Trình duyệt không đủ bộ nhớ đồ họa để phân bổ Canvas chunk ${c + 1}/${numChunks}`);
+          }
+          cCtx.fillStyle = pageBgColor;
+          cCtx.fillRect(0, 0, cCanvas.width, cCanvas.height);
+          canvasChunks.push({
+            canvas: cCanvas,
+            ctx: cCtx,
+            topPx: c * CHUNK_MAX_HEIGHT_PX,
+            heightPx: chunkH
+          });
+        }
+
+        const drawIntoChunks = (img, cropX, cropY, cropW, cropH, destX, destY, destW, destH) => {
+          for (const chunk of canvasChunks) {
+            const chunkTop = chunk.topPx;
+            const chunkBottom = chunk.topPx + chunk.heightPx;
+
+            const intersectTop = Math.max(destY, chunkTop);
+            const intersectBottom = Math.min(destY + destH, chunkBottom);
+
+            if (intersectBottom > intersectTop) {
+              const sliceDestH = intersectBottom - intersectTop;
+              const srcOffsetRatio = (intersectTop - destY) / destH;
+              const srcSliceH = (sliceDestH / destH) * cropH;
+              const srcSliceY = cropY + (srcOffsetRatio * cropH);
+              const targetYInChunk = intersectTop - chunkTop;
+
+              chunk.ctx.drawImage(
+                img,
+                cropX, Math.round(srcSliceY), cropW, Math.round(srcSliceH),
+                destX, targetYInChunk, destW, sliceDestH
+              );
+            }
+          }
+        };
 
         const viewportH = window.innerHeight;
         let currentScrollY = scanTop;
@@ -858,7 +1187,7 @@
         };
 
         currentStep = 'Bước 2: Chụp cuộn từng màn hình';
-        while (currentScrollY < scanTop + boundedTotalHeight) {
+        while (currentScrollY < scanTop + scanTotalHeight) {
           window.scrollTo(scanLeft, currentScrollY);
           await new Promise(r => setTimeout(r, 380));
 
@@ -882,7 +1211,7 @@
           const viewLeft = scanLeft - actualScrollX;
           const viewTop = currentScrollY - actualScrollY;
           const viewWidth = scanWidth;
-          const viewHeight = Math.min(viewportH, (scanTop + boundedTotalHeight) - currentScrollY);
+          const viewHeight = Math.min(viewportH, (scanTop + scanTotalHeight) - currentScrollY);
 
           const cropX = Math.max(0, Math.round(viewLeft * scaleX));
           const cropY = Math.max(0, Math.round(viewTop * scaleY));
@@ -894,14 +1223,10 @@
           const destW = Math.round(cropW * (effectiveDpr / scaleX));
           const destH = Math.round(cropH * (effectiveDpr / scaleY));
 
-          masterCtx.drawImage(
-            capturedImg,
-            cropX, cropY, cropW, cropH,
-            destX, destY, destW, destH
-          );
+          drawIntoChunks(capturedImg, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
 
           currentScrollY += viewportH;
-          const progressPercent = Math.min(70, Math.round(25 + ((currentScrollY - scanTop) / boundedTotalHeight) * 45));
+          const progressPercent = Math.min(70, Math.round(25 + ((currentScrollY - scanTop) / scanTotalHeight) * 45));
           this.updateProgress(progressPercent, '📸 Bước 2: Chụp ảnh từng phần', `Đang chụp dữ liệu: ${progressPercent}%...`);
         }
 
@@ -911,13 +1236,39 @@
 
         const targetPageH = Math.round(scanWidth * 1.4142);
         const slices = computeSmartPageSlices(
-          { left: scanLeft, top: scanTop, width: scanWidth, height: boundedTotalHeight },
-          boundedTotalHeight,
+          { left: scanLeft, top: scanTop, width: scanWidth, height: scanTotalHeight },
+          scanTotalHeight,
           targetPageH
         );
 
         currentStep = 'Bước 4: Chia trang & render Canvas từng trang';
         this.updateProgress(85, '📑 Bước 4: Đóng gói PDF', `Đang tạo ${slices.length} trang PDF chuẩn A4...`);
+
+        const drawSliceFromChunks = (pCtx, sliceTopCSS, sliceHeightCSS) => {
+          const sliceTopPx = Math.round(sliceTopCSS * effectiveDpr);
+          const sliceHeightPx = Math.round(sliceHeightCSS * effectiveDpr);
+          const sliceBottomPx = sliceTopPx + sliceHeightPx;
+
+          for (const chunk of canvasChunks) {
+            const chunkTop = chunk.topPx;
+            const chunkBottom = chunk.topPx + chunk.heightPx;
+
+            const intersectTop = Math.max(sliceTopPx, chunkTop);
+            const intersectBottom = Math.min(sliceBottomPx, chunkBottom);
+
+            if (intersectBottom > intersectTop) {
+              const hInChunk = intersectBottom - intersectTop;
+              const sy = intersectTop - chunkTop;
+              const dy = intersectTop - sliceTopPx;
+
+              pCtx.drawImage(
+                chunk.canvas,
+                0, sy, totalCanvasWidth, hInChunk,
+                0, dy, totalCanvasWidth, hInChunk
+              );
+            }
+          }
+        };
 
         const pdfPages = [];
 
@@ -926,7 +1277,7 @@
           const sliceHeight = sl.bottom - sl.top;
 
           const pageCanvas = document.createElement('canvas');
-          pageCanvas.width = Math.round(scanWidth * effectiveDpr);
+          pageCanvas.width = totalCanvasWidth;
           pageCanvas.height = Math.round(targetPageH * effectiveDpr);
           const pCtx = pageCanvas.getContext('2d');
           if (!pCtx) {
@@ -936,11 +1287,7 @@
           pCtx.fillStyle = pageBgColor;
           pCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
 
-          pCtx.drawImage(
-            masterCanvas,
-            0, Math.round(sl.top * effectiveDpr), Math.round(scanWidth * effectiveDpr), Math.round(sliceHeight * effectiveDpr),
-            0, 0, Math.round(scanWidth * effectiveDpr), Math.round(sliceHeight * effectiveDpr)
-          );
+          drawSliceFromChunks(pCtx, sl.top, sliceHeight);
 
           const jpegDataUrl = pageCanvas.toDataURL('image/jpeg', 0.95);
           pdfPages.push({
@@ -951,6 +1298,13 @@
             pixelHeight: pageCanvas.height
           });
         }
+
+        // Giải phóng ngay bộ nhớ Canvas chunks
+        canvasChunks.forEach(ch => {
+          ch.canvas.width = 1;
+          ch.canvas.height = 1;
+        });
+        canvasChunks.length = 0;
 
         currentStep = 'Bước 5: Xuất cấu trúc PDF nhị phân';
         this.updateProgress(92, '⏳ Bước 5: Tạo file tải về', 'Đang nén dữ liệu & xuất file PDF...');
@@ -1029,7 +1383,8 @@
         this.showDiagnosticError(currentStep, err, {
           scanWidth,
           scanHeight: scanTotalHeight,
-          mode: this.mode
+          mode: this.mode,
+          endPointY: this.endPointY
         });
       } finally {
         if (this.overlay) {
