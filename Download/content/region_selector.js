@@ -740,6 +740,26 @@
       let scanTotalHeight = 0;
 
       try {
+        currentStep = 'Bước 1: Kết nối Service Worker';
+        this.updateProgress(5, '⏳ Bước 1: Kết nối hệ thống', 'Đang xác thực kết nối với tiến trình nền...');
+
+        const pingRes = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ action: 'PING' }, (resp) => {
+            if (chrome.runtime.lastError) {
+              resolve({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              resolve(resp || { success: false, error: 'Phản hồi rỗng từ Background Worker' });
+            }
+          });
+        });
+
+        if (!pingRes || (!pingRes.pong && !pingRes.success)) {
+          throw new Error(
+            `Không thể kết nối với Service Worker tiện ích: "${pingRes?.error || 'Không có phản hồi'}". ` +
+            `Vui lòng vào chrome://extensions bấm nút Làm mới (Reload 🔄) tiện ích và F5 tải lại trang web này.`
+          );
+        }
+
         currentStep = 'Bước 1: Chuẩn bị nội dung & cuộn nạp';
         this.updateProgress(10, '⏳ Bước 1: Chuẩn bị nạp nội dung', 'Đang cuộn nạp tài liệu và kích hoạt hình ảnh lazy-load...');
 
@@ -818,7 +838,7 @@
               chrome.runtime.sendMessage({
                 action: 'CAPTURE_TAB_VIEWPORT',
                 format: 'jpeg',
-                quality: 94
+                quality: 90
               }, (resp) => {
                 if (chrome.runtime.lastError) {
                   resolve({ success: false, error: chrome.runtime.lastError.message });

@@ -138,6 +138,83 @@ async function ensureOffscreenDocument() {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const tabId = sender.tab ? sender.tab.id : message.tabId;
 
+  if (message.action === 'PING') {
+    sendResponse({
+      pong: true,
+      success: true,
+      time: Date.now(),
+      tabId: tabId || null
+    });
+    return false;
+  }
+
+  if (message.action === 'CAPTURE_TAB_VIEWPORT') {
+    const winId = (sender.tab && typeof sender.tab.windowId === 'number') ? sender.tab.windowId : null;
+    const format = message.format || 'jpeg';
+    const quality = typeof message.quality === 'number' ? message.quality : 90;
+    const captureOptions = format === 'jpeg' ? { format: 'jpeg', quality } : { format: 'png' };
+
+    let responded = false;
+    const respond = (payload) => {
+      if (responded) return;
+      responded = true;
+      try {
+        sendResponse(payload);
+      } catch (e) {
+        console.warn('[OmniLoader] Error calling sendResponse:', e);
+      }
+    };
+
+    // Tầng 1: Thử chụp với windowId của sender nếu có
+    const tryCaptureWithWinId = () => {
+      try {
+        chrome.tabs.captureVisibleTab(winId, captureOptions, (dataUrl) => {
+          const err1 = chrome.runtime.lastError;
+          if (!err1 && dataUrl) {
+            return respond({ success: true, dataUrl });
+          }
+          tryCaptureWithNullJpeg((err1 && err1.message) || 'Lỗi chụp với winId');
+        });
+      } catch (e1) {
+        tryCaptureWithNullJpeg(e1.message || 'Exception chụp với winId');
+      }
+    };
+
+    // Tầng 2: Thử chụp với null (cửa sổ hiện tại) bằng định dạng JPEG
+    const tryCaptureWithNullJpeg = (prevErr) => {
+      try {
+        chrome.tabs.captureVisibleTab(null, captureOptions, (dataUrl) => {
+          const err2 = chrome.runtime.lastError;
+          if (!err2 && dataUrl) {
+            return respond({ success: true, dataUrl });
+          }
+          tryCaptureWithNullPng(prevErr + ' | ' + ((err2 && err2.message) || 'Lỗi chụp với null JPEG'));
+        });
+      } catch (e2) {
+        tryCaptureWithNullPng(prevErr + ' | ' + (e2.message || 'Exception chụp null JPEG'));
+      }
+    };
+
+    // Tầng 3: Thử chụp với null bằng định dạng PNG (tương thích tối đa với mọi máy)
+    const tryCaptureWithNullPng = (prevErr) => {
+      try {
+        chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+          const err3 = chrome.runtime.lastError;
+          if (!err3 && dataUrl) {
+            return respond({ success: true, dataUrl });
+          }
+          const finalErrMsg = (err3 && err3.message) || 'Không thể chụp ảnh màn hình';
+          respond({ success: false, error: `${finalErrMsg} (Chi tiết: ${prevErr})` });
+        });
+      } catch (e3) {
+        respond({ success: false, error: `${e3.message} (Chi tiết: ${prevErr})` });
+      }
+    };
+
+    tryCaptureWithWinId();
+    return true; // Giữ kênh kết nối mở
+  }
+
   if (message.action === 'GET_MEDIA') {
     (async () => {
       const mediaList = await MediaSniffer.getMedia(message.tabId);
@@ -190,45 +267,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     );
     return true;
-  }
-
-  if (message.action === 'CAPTURE_TAB_VIEWPORT') {
-    const format = message.format || 'jpeg';
-    const quality = typeof message.quality === 'number' ? message.quality : 90;
-    const captureOptions = format === 'jpeg' ? { format: 'jpeg', quality } : { format: 'png' };
-
-    // Đảm bảo cửa sổ và tab đang được kích hoạt để tránh lỗi "tab's window must be focused"
-    if (sender.tab && typeof sender.tab.windowId === 'number') {
-      try {
-        chrome.windows.update(sender.tab.windowId, { focused: true });
-      } catch (e) {}
-    }
-
-    // Chụp trực tiếp bằng callback chuẩn và truyền rõ ràng null cho windowId (cửa sổ hiện tại)
-    chrome.tabs.captureVisibleTab(null, captureOptions, (dataUrl) => {
-      const err = chrome.runtime.lastError;
-      if (err) {
-        console.warn('[OmniLoader] Lỗi chụp tab lần 1 (JPEG):', err.message);
-        // Thử lại ngay với format PNG
-        chrome.tabs.captureVisibleTab(null, { format: 'png' }, (pngDataUrl) => {
-          const secondErr = chrome.runtime.lastError;
-          if (secondErr) {
-            console.error('[OmniLoader] Lỗi chụp tab lần 2 (PNG):', secondErr.message);
-            sendResponse({ success: false, error: secondErr.message || err.message });
-          } else if (pngDataUrl) {
-            sendResponse({ success: true, dataUrl: pngDataUrl });
-          } else {
-            sendResponse({ success: false, error: err.message || 'Không nhận được dữ liệu ảnh chụp' });
-          }
-        });
-      } else if (!dataUrl) {
-        sendResponse({ success: false, error: 'Không nhận được dữ liệu ảnh chụp từ trình duyệt' });
-      } else {
-        sendResponse({ success: true, dataUrl });
-      }
-    });
-
-    return true; // Bắt buộc return true để giữ kênh kết nối mở cho callback bất đồng bộ
   }
 
   if (message.action === 'TRIGGER_REGION_SCAN_TAB') {
