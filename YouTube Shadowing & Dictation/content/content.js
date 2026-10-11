@@ -31,15 +31,24 @@
         delete pendingSubtitleResolvers[event.data.requestId];
         if (event.data.success) {
           if (event.data.segments && Array.isArray(event.data.segments)) {
-            resolver(event.data.segments);
+            resolver({ success: true, segments: event.data.segments });
           } else if (event.data.rawText) {
             const segs = SubtitleParser.parse(event.data.rawText);
-            resolver(segs);
+            if (segs && segs.length > 0) {
+              resolver({ success: true, segments: segs });
+            } else {
+              resolver({
+                success: false,
+                error: 'Phụ đề rỗng (0 câu thoại)',
+                debug: event.data.debug,
+                textLength: event.data.rawText.length
+              });
+            }
           } else {
-            resolver(null);
+            resolver({ success: false, error: 'Dữ liệu trả về rỗng', debug: event.data.debug });
           }
         } else {
-          resolver(null);
+          resolver({ success: false, error: event.data.debug?.error || 'Lỗi tải in-page', debug: event.data.debug });
         }
       }
       return;
@@ -246,7 +255,7 @@
         }, '*');
       });
 
-      if (inPageResult && inPageResult.length > 0) {
+      if (inPageResult && inPageResult.success && inPageResult.segments && inPageResult.segments.length > 0) {
         return inPageResult;
       }
     } catch (e) {
@@ -281,7 +290,7 @@
         const text = await safeFetch(u);
         if (text && text.trim().length > 0) {
           const segs = SubtitleParser.parse(text);
-          if (segs && segs.length > 0) return segs;
+          if (segs && segs.length > 0) return { success: true, segments: segs };
         }
       }
     }
@@ -289,16 +298,16 @@
     // 3. Third priority: Active DOM transcript triggering (chỉ lấy được phần nhìn thấy)
     const domSegments = await extractFromDomTranscript();
     if (domSegments && domSegments.length > 0) {
-      return domSegments;
+      return { success: true, segments: domSegments };
     }
 
     // 4. Fourth priority: Check HTML5 video textTracks
     const trackSegments = extractFromTextTracks();
     if (trackSegments && trackSegments.length > 0) {
-      return trackSegments;
+      return { success: true, segments: trackSegments };
     }
 
-    return [];
+    return { success: false, error: 'Không tìm thấy câu thoại nào' };
   }
 
   // Handle messages from sidepanel
@@ -347,11 +356,15 @@
 
     if (message.type === 'FETCH_SUBTITLES') {
       fetchSubtitleSegments(message.baseUrl)
-        .then(segments => {
-          if (segments && segments.length > 0) {
-            sendResponse({ success: true, segments: segments });
+        .then(res => {
+          if (res && res.success && res.segments && res.segments.length > 0) {
+            sendResponse({ success: true, segments: res.segments });
           } else {
-            sendResponse({ success: false, error: 'Không parse được phụ đề' });
+            sendResponse({
+              success: false,
+              error: res?.error || 'Không tải được phụ đề',
+              debug: res?.debug
+            });
           }
         })
         .catch(err => {

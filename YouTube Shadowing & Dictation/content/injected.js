@@ -219,55 +219,76 @@
         ];
 
         async function fetchSubtitleText(url) {
+          let lastStatus = 0;
+          let lastError = null;
+
           // 1. Fetch với credentials
           try {
             const res = await window.fetch(url, { credentials: 'include' });
+            lastStatus = res.status;
             if (res.ok) {
               const txt = await res.text();
-              if (txt && txt.trim().length > 0) return txt;
+              if (txt && txt.trim().length > 0) {
+                return { ok: true, text: txt, status: res.status };
+              }
+              return { ok: false, text: txt || '', status: res.status, error: 'Nội dung rỗng (0 bytes)' };
+            } else {
+              lastError = `HTTP ${res.status}`;
             }
-          } catch (e) {}
+          } catch (e) {
+            lastError = e.message;
+          }
 
-          // 2. XHR Fallback (vượt qua các interceptor/monkeypatch của YouTube)
+          // 2. XHR Fallback
           try {
-            const xhrText = await new Promise((resolve) => {
+            const xhrResult = await new Promise((resolve) => {
               const xhr = new XMLHttpRequest();
               xhr.open('GET', url, true);
               xhr.withCredentials = true;
-              xhr.timeout = 10000;
+              xhr.timeout = 8000;
               xhr.onload = () => {
-                if (xhr.status >= 200 && xhr.status < 300 && xhr.responseText && xhr.responseText.trim().length > 0) {
-                  resolve(xhr.responseText);
+                if (xhr.status >= 200 && xhr.status < 300) {
+                  if (xhr.responseText && xhr.responseText.trim().length > 0) {
+                    resolve({ ok: true, text: xhr.responseText, status: xhr.status });
+                  } else {
+                    resolve({ ok: false, text: '', status: xhr.status, error: 'Nội dung rỗng (0 bytes)' });
+                  }
                 } else {
-                  resolve(null);
+                  resolve({ ok: false, status: xhr.status, error: `HTTP ${xhr.status}` });
                 }
               };
-              xhr.onerror = () => resolve(null);
-              xhr.ontimeout = () => resolve(null);
+              xhr.onerror = () => resolve({ ok: false, error: 'Lỗi mạng XHR' });
+              xhr.ontimeout = () => resolve({ ok: false, error: 'Quá thời gian (Timeout)' });
               xhr.send();
             });
-            if (xhrText) return xhrText;
+            if (xhrResult && xhrResult.ok) return xhrResult;
+            if (xhrResult) {
+              lastStatus = xhrResult.status || lastStatus;
+              lastError = xhrResult.error || lastError;
+            }
           } catch (e) {}
 
-          return null;
+          return { ok: false, status: lastStatus, error: lastError || 'Không tải được' };
         }
 
-        let rawText = null;
+        let probeResult = null;
         for (const u of urls) {
-          rawText = await fetchSubtitleText(u);
-          if (rawText) break;
+          probeResult = await fetchSubtitleText(u);
+          if (probeResult && probeResult.ok) break;
         }
 
-        if (rawText) {
+        if (probeResult && probeResult.ok && probeResult.text) {
           window.postMessage({
             source: 'yt-dictation-page',
             type: 'FETCH_SUBTITLES_IN_PAGE_RESPONSE',
             requestId: requestId,
             success: true,
-            rawText: rawText
+            rawText: probeResult.text
           }, '*');
           return;
         }
+
+        window.lastFetchProbe = probeResult;
       }
 
       // 2. FALLBACK: Nếu Timedtext URL không có hoặc lỗi, thử Innertube get_transcript (có hỗ trợ continuation)
@@ -287,7 +308,8 @@
         source: 'yt-dictation-page',
         type: 'FETCH_SUBTITLES_IN_PAGE_RESPONSE',
         requestId: requestId,
-        success: false
+        success: false,
+        debug: window.lastFetchProbe || { error: 'Tất cả phương thức tải đều thất bại' }
       }, '*');
     }
   });

@@ -753,7 +753,13 @@ Vui lòng mở một video trên YouTube (youtube.com/watch?v=...) rồi bấm K
             trackDetailsLog.push(`• [${i}] ${testTrack.name}: ✅ Có ${loadedCount} câu`);
             break;
           } else {
-            trackDetailsLog.push(`• [${i}] ${testTrack.name}: ⚠️ Rỗng hoặc không nạp được`);
+            let detail = '';
+            if (testRes?.debug?.status) {
+              detail = `(HTTP ${testRes.debug.status}${testRes.debug.error ? ' - ' + testRes.debug.error : ''})`;
+            } else if (testRes?.error) {
+              detail = `(${testRes.error})`;
+            }
+            trackDetailsLog.push(`• [${i}] ${testTrack.name}: ⚠️ ${detail || 'Rỗng hoặc không nạp được'}`);
           }
         }
 
