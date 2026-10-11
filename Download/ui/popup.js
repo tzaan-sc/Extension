@@ -144,6 +144,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   const pageTitleElem = document.getElementById('pageTitle');
   const tabButtons = document.querySelectorAll('.tab-btn');
   const btnRefresh = document.getElementById('btnRefresh');
+  const btnHeaderRegionScan = document.getElementById('btnHeaderRegionScan');
+
+  async function triggerRegionScan() {
+    if (!currentTab || !currentTab.id) return;
+    if (currentTab.url?.startsWith('chrome://') || currentTab.url?.startsWith('edge://')) {
+      alert('Không thể chạy quét vùng trên trang hệ thống của trình duyệt.');
+      return;
+    }
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: currentTab.id },
+        files: ['content/region_selector.js']
+      }).catch(() => {});
+
+      await chrome.tabs.sendMessage(currentTab.id, { action: 'START_REGION_CAPTURE' });
+      window.close();
+    } catch (e) {
+      console.error('Lỗi bật quét vùng:', e);
+    }
+  }
+
+  if (btnHeaderRegionScan) {
+    btnHeaderRegionScan.addEventListener('click', triggerRegionScan);
+  }
 
   try {
     const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -160,7 +184,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await chrome.scripting.executeScript({
         target: { tabId },
-        files: ['content/content.js']
+        files: ['content/content.js', 'content/region_selector.js']
       }).catch(() => {});
     } catch (e) {}
   }
@@ -400,7 +424,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       const docToolbar = document.createElement('div');
       docToolbar.className = 'doc-toolbar';
       docToolbar.innerHTML = `
-        <button id="btnUnblurDoc" class="tool-btn highlight" title="Xóa bỏ lớp mờ, gỡ bỏ thông báo chặn nạp tài liệu">
+        <button id="btnAreaScanPdf" class="tool-btn highlight" title="Quét vùng và cuộn trang xuống dưới để xuất PDF chia trang chuẩn, không bị cắt ngang dòng chữ">
+          <span>🎯 Quét Vùng Ra PDF</span>
+        </button>
+        <button id="btnUnblurDoc" class="tool-btn" title="Xóa bỏ lớp mờ, gỡ bỏ thông báo chặn nạp tài liệu">
           <span>🔓 Mở Mờ & Tải Full</span>
         </button>
         <button id="btnScanCanvas" class="tool-btn" title="Tự động cuộn nạp & gom toàn bộ trang thành 1 file PDF chuẩn">
@@ -410,6 +437,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           <span>🖨️ Lưu Trang Web</span>
         </button>
       `;
+
+      // Nút Quét vùng xuất PDF
+      const btnAreaScanPdf = docToolbar.querySelector('#btnAreaScanPdf');
+      if (btnAreaScanPdf) {
+        btnAreaScanPdf.addEventListener('click', triggerRegionScan);
+      }
 
       // Nút Mở mờ & Tải Full
       docToolbar.querySelector('#btnUnblurDoc').addEventListener('click', async (e) => {

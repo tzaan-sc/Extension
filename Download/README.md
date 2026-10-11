@@ -22,6 +22,7 @@ Extension đa năng hỗ trợ bắt link và tải về video (YouTube, phim m3
 
 ## 🌟 Các tính năng chính
 
+- 🎯 **Quét vùng xuất PDF chống cắt dòng (Smart Page Break):** Kéo chuột chọn vùng trên trang web, cuộn nạp toàn bộ nội dung xuống dưới và xuất PDF chuẩn A4. Thuật toán nhận diện cấu trúc DOM thông minh đảm bảo không bị cắt đôi dòng chữ, hình ảnh hay bảng biểu giữa trang.
 - 🎬 **Tải Video YouTube:** Tự động bắt link các định dạng 1080p, 720p, 360p, file âm thanh M4A và phụ đề VTT.
 - ⚡ **Tải phim luồng HLS (.m3u8):** Tự động bắt link m3u8, tải song song nhiều chunk `.ts` và ghép thành file `.mp4` hoàn chỉnh trực tiếp trong trình duyệt.
 - 📚 **Cào tài liệu học tập sang PDF:** Tự động quét thẻ `<canvas>` trên các web học liệu chặn tải (Scribd, Studocu, Canvas) và xuất ra file tài liệu.

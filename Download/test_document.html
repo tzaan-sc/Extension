@@ -140,6 +140,64 @@
     </div>
   </div>
 
+  <!-- Phần Thử Nghiệm Quét Vùng Sang PDF Chống Cắt Dòng -->
+  <div class="test-article-section" id="testArticleSection" style="max-width: 800px; width: 100%; margin-top: 30px; background: #ffffff; color: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 4px 25px rgba(0,0,0,0.4);">
+    <div style="background: linear-gradient(135deg, #10b981, #0284c7); color: #fff; padding: 14px 18px; border-radius: 8px; margin-bottom: 22px;">
+      <h2 style="font-size: 18px; margin: 0; font-weight: 700;">🎯 KHU VỰC THỬ NGHIỆM: QUÉT VÙNG XUẤT PDF CHỐNG CẮT DÒNG</h2>
+      <p style="font-size: 13px; margin-top: 6px; color: #e0f2fe; line-height: 1.5;">Mở OmniLoader -> Bấm <b>"🎯 Quét Vùng Ra PDF"</b> (hoặc icon quét vùng góc trên) -> Kéo chuột quét từ bài viết này cuộn xuống dưới để xuất PDF chuẩn A4, đảm bảo chữ, ảnh & bảng biểu không bị cắt ngang giữa chừng!</p>
+    </div>
+
+    <h1 style="font-size: 26px; color: #0f172a; margin-bottom: 14px; font-weight: 800;">Nghiên cứu Ứng dụng Trí tuệ Nhân tạo trong Xử lý Ngôn ngữ Tự nhiên & Học Máy</h1>
+    <p style="font-size: 15px; line-height: 1.7; color: #334155; margin-bottom: 16px;">
+      Trí tuệ nhân tạo (AI) và Học sâu (Deep Learning) đang định hình lại phương thức con người tương tác với dữ liệu số. Trong các tác vụ xử lý ngôn ngữ tự nhiên (NLP), mô hình Transformer đã giải quyết triệt để vấn đề phụ thuộc xa trong chuỗi văn bản mà mạng nơ-ron hồi quy (RNN) gặp phải trước đây.
+    </p>
+
+    <h2 style="font-size: 20px; color: #0369a1; margin-top: 24px; margin-bottom: 12px; font-weight: 700;">1. Bảng so sánh các kiến trúc mô hình học sâu hiện đại</h2>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px;">
+      <thead>
+        <tr style="background: #f1f5f9; color: #0f172a; text-align: left;">
+          <th style="padding: 10px; border: 1px solid #cbd5e1;">Kiến trúc</th>
+          <th style="padding: 10px; border: 1px solid #cbd5e1;">Khả năng song song</th>
+          <th style="padding: 10px; border: 1px solid #cbd5e1;">Bộ nhớ ngữ cảnh</th>
+          <th style="padding: 10px; border: 1px solid #cbd5e1;">Độ chính xác NLP</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding: 10px; border: 1px solid #cbd5e1; font-weight: 600;">RNN / LSTM</td>
+          <td style="padding: 10px; border: 1px solid #cbd5e1; color: #dc2626;">Kém (tuần tự)</td>
+          <td style="padding: 10px; border: 1px solid #cbd5e1;">Ngắn (100 - 500 từ)</td>
+          <td style="padding: 10px; border: 1px solid #cbd5e1;">Trung bình (75%)</td>
+        </tr>
+        <tr style="background: #f8fafc;">
+          <td style="padding: 10px; border: 1px solid #cbd5e1; font-weight: 600;">Transformer</td>
+          <td style="padding: 10px; border: 1px solid #cbd5e1; color: #16a34a;">Tuyệt vời (Self-Attention)</td>
+          <td style="padding: 10px; border: 1px solid #cbd5e1;">Rất dài (32k - 1M token)</td>
+          <td style="padding: 10px; border: 1px solid #cbd5e1;">Xuất sắc (95%+)</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px; border: 1px solid #cbd5e1; font-weight: 600;">State Space (Mamba)</td>
+          <td style="padding: 10px; border: 1px solid #cbd5e1; color: #16a34a;">Rất tốt (Tuyến tính O(N))</td>
+          <td style="padding: 10px; border: 1px solid #cbd5e1;">Cực dài (hàng triệu token)</td>
+          <td style="padding: 10px; border: 1px solid #cbd5e1;">Rất cao (93%+)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 style="font-size: 20px; color: #0369a1; margin-top: 24px; margin-bottom: 12px; font-weight: 700;">2. Cơ chế phân tích ranh giới & ngắt trang thông minh (Smart Page Break)</h2>
+    <p style="font-size: 15px; line-height: 1.7; color: #334155; margin-bottom: 16px;">
+      Khi chuyển đổi các bài viết web dài thành tài liệu PDF nhiều trang, một vấn đề cố hữu là các dòng chữ thường xuyên bị cắt đôi theo chiều ngang do chia trang cơ học. Tiện ích OmniLoader sử dụng thuật toán phân tích cây DOM thời gian thực: nhận diện chính xác đường cơ sở (baseline) của từng dòng văn bản và kích thước từng khối ảnh/bảng, đảm bảo mỗi trang A4 luôn kết thúc ở khoảng trắng tự nhiên giữa hai phần tử kề nhau.
+    </p>
+
+    <blockquote style="border-left: 4px solid #0284c7; background: #f0f9ff; padding: 14px 18px; margin: 18px 0; border-radius: 0 8px 8px 0; font-style: italic; color: #0369a1; font-size: 14.5px;">
+      "Giải pháp ngắt trang theo khối phần tử DOM đem lại độ hoàn thiện thị giác tương đương với các phần mềm xuất bản in ấn chuyên nghiệp như Adobe InDesign hay LaTeX."
+    </blockquote>
+
+    <p style="font-size: 15px; line-height: 1.7; color: #334155; margin-bottom: 16px;">
+      Thử nghiệm quét từ tiêu đề bài viết này cuộn xuống dưới, bạn sẽ thấy file PDF được đóng gói và tải về máy với các trang tách biệt ngay ngắn, lề trang chuẩn A4 và toàn bộ bảng biểu, trích dẫn, tiêu đề được giữ nguyên vẹn 100%.
+    </p>
+  </div>
+
   <script>
     // Vẽ nội dung đồ họa lên các Canvas
     function renderPage(canvasId, title, pageNum, contentLines) {

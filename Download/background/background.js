@@ -149,6 +149,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.action === 'CAPTURE_TAB_VIEWPORT') {
+    (async () => {
+      try {
+        const windowId = sender.tab ? sender.tab.windowId : undefined;
+        chrome.tabs.captureVisibleTab(
+          windowId,
+          { format: 'png' },
+          (dataUrl) => {
+            if (chrome.runtime.lastError) {
+              sendResponse({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              sendResponse({ success: true, dataUrl });
+            }
+          }
+        );
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
   if (message.action === 'EXTRACT_AUDIO') {
     (async () => {
       try {
