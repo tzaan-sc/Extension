@@ -223,6 +223,10 @@
           }
         }
 
+        if (safeCut <= currentY + 30) {
+          safeCut = Math.round(Math.min(currentY + targetPageHeight, totalHeight));
+        }
+
         slices.push({ top: currentY, bottom: safeCut });
         currentY = safeCut;
       }
@@ -631,10 +635,21 @@
 
         this.updateProgress(30, '📸 Bước 2: Chụp ảnh từng phần', 'Đang quét dữ liệu màn hình theo từng khung hình...');
 
+        const dpr = window.devicePixelRatio || 1;
+        const effectiveDpr = Math.min(dpr, 1.25);
+
         const masterCanvas = document.createElement('canvas');
-        masterCanvas.width = Math.round(scanWidth * dpr);
-        masterCanvas.height = Math.round(scanTotalHeight * dpr);
-        const masterCtx = masterCanvas.getContext('2d');
+        masterCanvas.width = Math.round(scanWidth * effectiveDpr);
+        masterCanvas.height = Math.round(scanTotalHeight * effectiveDpr);
+        let masterCtx = masterCanvas.getContext('2d');
+        if (!masterCtx) {
+          masterCanvas.width = Math.round(scanWidth);
+          masterCanvas.height = Math.round(scanTotalHeight);
+          masterCtx = masterCanvas.getContext('2d');
+        }
+        if (!masterCtx) {
+          throw new Error('Trình duyệt không đủ bộ nhớ đồ họa để phân bổ Canvas.');
+        }
 
         const bodyBg = window.getComputedStyle(document.body).backgroundColor;
         const pageBgColor = (bodyBg && bodyBg !== 'transparent' && bodyBg !== 'rgba(0, 0, 0, 0)') ? bodyBg : '#ffffff';
@@ -644,24 +659,30 @@
         const viewportH = window.innerHeight;
         let currentScrollY = scanTop;
 
+        const safeCaptureVisibleTab = async () => {
+          for (let attempt = 0; attempt < 8; attempt++) {
+            const captureRes = await new Promise((resolve) => {
+              chrome.runtime.sendMessage({ action: 'CAPTURE_TAB_VIEWPORT' }, resolve);
+            });
+            if (captureRes && captureRes.success && captureRes.dataUrl) {
+              return captureRes.dataUrl;
+            }
+            await new Promise((r) => setTimeout(r, 650));
+          }
+          throw new Error('Trình duyệt giới hạn tốc độ chụp màn hình. Vui lòng thử lại sau.');
+        };
+
         while (currentScrollY < scanTop + scanTotalHeight) {
           window.scrollTo(scanLeft, currentScrollY);
-          await new Promise(r => setTimeout(r, 90));
+          await new Promise(r => setTimeout(r, 450));
 
-          const captureRes = await new Promise((resolve) => {
-            chrome.runtime.sendMessage({ action: 'CAPTURE_TAB_VIEWPORT' }, resolve);
-          });
-
-          if (!captureRes || !captureRes.success || !captureRes.dataUrl) {
-            throw new Error(captureRes?.error || 'Không thể chụp ảnh màn hình.');
-          }
-
-          const capturedImg = await loadImage(captureRes.dataUrl);
+          const dataUrl = await safeCaptureVisibleTab();
+          const capturedImg = await loadImage(dataUrl);
 
           const sliceH = Math.min(viewportH, (scanTop + scanTotalHeight) - currentScrollY);
-          const srcW = Math.min(capturedImg.width, Math.round(scanWidth * dpr));
-          const srcH = Math.min(capturedImg.height, Math.round(sliceH * dpr));
-          const destY = Math.round((currentScrollY - scanTop) * dpr);
+          const srcW = Math.min(capturedImg.width, Math.round(scanWidth * effectiveDpr));
+          const srcH = Math.min(capturedImg.height, Math.round(sliceH * effectiveDpr));
+          const destY = Math.round((currentScrollY - scanTop) * effectiveDpr);
 
           masterCtx.drawImage(
             capturedImg,
@@ -693,8 +714,8 @@
           const sliceHeight = sl.bottom - sl.top;
 
           const pageCanvas = document.createElement('canvas');
-          pageCanvas.width = Math.round(scanWidth * dpr);
-          pageCanvas.height = Math.round(targetPageH * dpr);
+          pageCanvas.width = Math.round(scanWidth * effectiveDpr);
+          pageCanvas.height = Math.round(targetPageH * effectiveDpr);
           const pCtx = pageCanvas.getContext('2d');
 
           pCtx.fillStyle = pageBgColor;
@@ -702,8 +723,8 @@
 
           pCtx.drawImage(
             masterCanvas,
-            0, Math.round(sl.top * dpr), Math.round(scanWidth * dpr), Math.round(sliceHeight * dpr),
-            0, 0, Math.round(scanWidth * dpr), Math.round(sliceHeight * dpr)
+            0, Math.round(sl.top * effectiveDpr), Math.round(scanWidth * effectiveDpr), Math.round(sliceHeight * effectiveDpr),
+            0, 0, Math.round(scanWidth * effectiveDpr), Math.round(sliceHeight * effectiveDpr)
           );
 
           const jpegDataUrl = pageCanvas.toDataURL('image/jpeg', 0.95);
@@ -721,26 +742,44 @@
         const pdfBlob = createPdfFromImages(pdfPages);
         if (!pdfBlob) throw new Error('Không tạo được file PDF từ các trang.');
 
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const pageTitle = sanitizeFilename(document.title || 'Tai_Lieu_Web');
-          const cleanName = `${pageTitle}_QuetVung_${Date.now()}.pdf`;
+        const pageTitle = sanitizeFilename(document.title || 'Tai_Lieu_Web');
+        const cleanName = `${pageTitle}_QuetVung_${Date.now()}.pdf`;
 
-          chrome.runtime.sendMessage({
-            action: 'DOWNLOAD_DIRECT',
-            url: reader.result,
-            filename: cleanName
-          }, () => {
-            const spinner = this.statusPanel.querySelector('#omni-status-spinner');
-            if (spinner) spinner.style.display = 'none';
-            this.updateProgress(100, '✓ Đã xuất PDF thành công!', `Đã tải về máy: ${cleanName} (${pdfPages.length} trang chuẩn A4)`);
+        // 1. Tải trực tiếp bằng Blob URL trên trang (Nhanh tức thì, không bị giới hạn dung lượng)
+        const blobUrl = URL.createObjectURL(pdfBlob);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = blobUrl;
+        downloadLink.download = cleanName;
+        downloadLink.style.display = 'none';
+        (document.body || document.documentElement).appendChild(downloadLink);
+        downloadLink.click();
+        setTimeout(() => {
+          downloadLink.remove();
+          URL.revokeObjectURL(blobUrl);
+        }, 10000);
 
-            setTimeout(() => {
-              this.destroy();
-            }, 3000);
-          });
-        };
-        reader.readAsDataURL(pdfBlob);
+        // 2. Dự phòng qua background download nếu dung lượng vừa phải
+        try {
+          if (pdfBlob.size < 15 * 1024 * 1024) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              chrome.runtime.sendMessage({
+                action: 'DOWNLOAD_DIRECT',
+                url: reader.result,
+                filename: cleanName
+              });
+            };
+            reader.readAsDataURL(pdfBlob);
+          }
+        } catch (e) {}
+
+        const spinner = this.statusPanel.querySelector('#omni-status-spinner');
+        if (spinner) spinner.style.display = 'none';
+        this.updateProgress(100, '✓ Đã xuất PDF thành công!', `Đã tải về máy: ${cleanName} (${pdfPages.length} trang chuẩn A4)`);
+
+        setTimeout(() => {
+          this.destroy();
+        }, 3500);
 
       } catch (err) {
         console.error('OmniLoader Region Scan Error:', err);
