@@ -9,16 +9,27 @@
     return;
   }
 
-  // 1. PURE JS PDF BUILDER (PDF-1.4 Native Generator)
+  // 1. PURE JS PDF BUILDER (PDF-1.4 Native Generator - Binary Safe)
   function createPdfFromImages(images) {
     if (!images || images.length === 0) return null;
 
-    let pdfContent = '%PDF-1.4\n';
+    const chunks = [];
     const objectOffsets = [];
+    let currentOffset = 0;
+    const encoder = new TextEncoder();
 
-    function addLine(str) { pdfContent += str + '\n'; }
+    function pushString(str) {
+      const bytes = encoder.encode(str);
+      chunks.push(bytes);
+      currentOffset += bytes.length;
+    }
+
+    function addLine(str) {
+      pushString(str + '\n');
+    }
+
     function markObject(objNum) {
-      objectOffsets[objNum] = pdfContent.length;
+      objectOffsets[objNum] = currentOffset;
       addLine(`${objNum} 0 obj`);
     }
 
@@ -57,14 +68,20 @@
       addLine('endobj');
 
       const base64Data = img.dataUrl.split(',')[1];
-      const rawBinary = atob(base64Data);
+      const rawBinaryString = atob(base64Data);
+      const imgBytes = new Uint8Array(rawBinaryString.length);
+      for (let b = 0; b < rawBinaryString.length; b++) {
+        imgBytes[b] = rawBinaryString.charCodeAt(b);
+      }
 
       markObject(imageObjNum);
-      addLine(`<< /Type /XObject /Subtype /Image /Width ${img.pixelWidth || 800} /Height ${img.pixelHeight || 1100} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${rawBinary.length} >>\nstream`);
-      pdfContent += rawBinary + '\nendstream\nendobj\n';
+      addLine(`<< /Type /XObject /Subtype /Image /Width ${img.pixelWidth || 800} /Height ${img.pixelHeight || 1100} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.length} >>\nstream`);
+      chunks.push(imgBytes);
+      currentOffset += imgBytes.length;
+      addLine('\nendstream\nendobj');
     }
 
-    const startXref = pdfContent.length;
+    const startXref = currentOffset;
     addLine('xref');
     addLine(`0 ${3 + totalPages * 3}`);
     addLine('0000000000 65535 f ');
@@ -80,11 +97,7 @@
     addLine(String(startXref));
     addLine('%%EOF');
 
-    const buffer = new Uint8Array(pdfContent.length);
-    for (let i = 0; i < pdfContent.length; i++) {
-      buffer[i] = pdfContent.charCodeAt(i) & 0xff;
-    }
-    return new Blob([buffer], { type: 'application/pdf' });
+    return new Blob(chunks, { type: 'application/pdf' });
   }
 
   // 2. HELPER FUNCTIONS
@@ -393,13 +406,15 @@
           border-radius: 16px;
           box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 30px rgba(16, 185, 129, 0.25);
           padding: 24px;
-          width: 360px;
+          width: 420px;
+          max-width: 90vw;
           color: #f8fafc;
           z-index: 2147483647;
           display: none;
           flex-direction: column;
-          gap: 16px;
+          gap: 14px;
           text-align: center;
+          box-sizing: border-box;
         ">
           <div id="omni-status-spinner" style="
             width: 36px; height: 36px;
@@ -410,10 +425,57 @@
             animation: omniSpin 0.8s linear infinite;
           "></div>
           <div id="omni-status-title" style="font-size: 15px; font-weight: 700; color: #38bdf8;">Đang xử lý quét tài liệu...</div>
-          <div style="width: 100%; height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 10px; overflow: hidden;">
+          <div id="omni-progress-wrapper" style="width: 100%; height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 10px; overflow: hidden;">
             <div id="omni-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #10b981, #38bdf8); border-radius: 10px; transition: width 0.3s ease;"></div>
           </div>
           <div id="omni-status-msg" style="font-size: 12px; color: #94a3b8; line-height: 1.5;">Chuẩn bị cuộn nạp tài liệu...</div>
+          
+          <!-- Khu vực hiển thị chẩn đoán lỗi chi tiết khi gặp sự cố -->
+          <div id="omni-error-box" style="display: none; flex-direction: column; gap: 10px; text-align: left; margin-top: 4px;">
+            <div style="font-size: 11px; font-weight: 600; color: #f87171; display: flex; align-items: center; gap: 5px;">
+              <span>⚠️ Chi tiết lỗi kỹ thuật:</span>
+            </div>
+            <textarea id="omni-error-text" readonly style="
+              width: 100%; height: 120px;
+              background: rgba(0, 0, 0, 0.5);
+              border: 1px solid rgba(239, 68, 68, 0.35);
+              border-radius: 8px;
+              color: #fca5a5;
+              font-family: Consolas, monospace;
+              font-size: 11px;
+              padding: 8px;
+              resize: none;
+              box-sizing: border-box;
+              line-height: 1.4;
+            "></textarea>
+            <div style="display: flex; gap: 8px;">
+              <button id="omni-btn-copy-error" style="
+                flex: 1;
+                background: linear-gradient(135deg, #ef4444, #dc2626);
+                color: #fff;
+                border: none;
+                padding: 8px 12px;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 700;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+              ">📋 Sao chép lỗi gửi hỗ trợ</button>
+              <button id="omni-btn-error-close" style="
+                background: rgba(255, 255, 255, 0.1);
+                color: #cbd5e1;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                padding: 8px 14px;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+              ">✕ Đóng</button>
+            </div>
+          </div>
         </div>
       `;
 
@@ -454,7 +516,35 @@
         this.executeRegionCapture();
       });
 
+      // Xử lý nút trong hộp chẩn đoán lỗi
+      const btnErrorClose = this.overlay.querySelector('#omni-btn-error-close');
+      if (btnErrorClose) {
+        btnErrorClose.addEventListener('click', () => this.destroy());
+      }
+
+      const btnCopyError = this.overlay.querySelector('#omni-btn-copy-error');
+      if (btnCopyError) {
+        btnCopyError.addEventListener('click', () => {
+          const errTextarea = this.overlay.querySelector('#omni-error-text');
+          if (errTextarea && errTextarea.value) {
+            navigator.clipboard.writeText(errTextarea.value).then(() => {
+              btnCopyError.textContent = '✓ Đã sao chép! Hãy dán vào chat';
+              btnCopyError.style.background = '#059669';
+              setTimeout(() => {
+                btnCopyError.textContent = '📋 Sao chép lỗi gửi hỗ trợ';
+                btnCopyError.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+              }, 3000);
+            }).catch(() => {
+              errTextarea.select();
+              document.execCommand('copy');
+              btnCopyError.textContent = '✓ Đã sao chép!';
+            });
+          }
+        });
+      }
+
       this.actionPanel.addEventListener('mousedown', (e) => e.stopPropagation());
+      this.statusPanel.addEventListener('mousedown', (e) => e.stopPropagation());
     }
 
     onKeyDown(e) {
@@ -570,6 +660,50 @@
       if (pMsg && msg) pMsg.textContent = msg;
     }
 
+    showDiagnosticError(stepName, err, extraInfo = {}) {
+      if (!this.statusPanel) return;
+      this.statusPanel.style.display = 'flex';
+
+      const spinner = this.statusPanel.querySelector('#omni-status-spinner');
+      if (spinner) spinner.style.display = 'none';
+
+      const progressBar = this.statusPanel.querySelector('#omni-progress-bar');
+      if (progressBar) progressBar.style.background = '#ef4444';
+
+      const pTitle = this.statusPanel.querySelector('#omni-status-title');
+      if (pTitle) {
+        pTitle.textContent = `❌ Lỗi tại: ${stepName}`;
+        pTitle.style.color = '#ef4444';
+      }
+
+      const pMsg = this.statusPanel.querySelector('#omni-status-msg');
+      if (pMsg) {
+        pMsg.textContent = err.message || 'Đã xảy ra sự cố trong quá trình xuất PDF.';
+      }
+
+      const errorBox = this.statusPanel.querySelector('#omni-error-box');
+      const errorTextarea = this.statusPanel.querySelector('#omni-error-text');
+
+      if (errorBox && errorTextarea) {
+        errorBox.style.display = 'flex';
+        const report = [
+          `[OMNILOADER REGION SCAN REPORT]`,
+          `Thời gian: ${new Date().toLocaleString()}`,
+          `URL: ${window.location.href}`,
+          `Bước phát sinh lỗi: ${stepName}`,
+          `Lỗi (Name): ${err.name || 'Error'}`,
+          `Thông điệp (Message): ${err.message || String(err)}`,
+          `Kích thước vùng quét: W=${extraInfo.scanWidth || 'N/A'}, H=${extraInfo.scanHeight || 'N/A'} (Mode: ${extraInfo.mode || this.mode})`,
+          `Viewport: ${window.innerWidth}x${window.innerHeight}, DPR: ${window.devicePixelRatio || 1}`,
+          `Trang web: scrollHeight=${document.documentElement.scrollHeight}`,
+          `Stack Trace:`,
+          err.stack || 'Không có stack trace'
+        ].join('\n');
+
+        errorTextarea.value = report;
+      }
+    }
+
     // 5. QUY TRÌNH CHỤP VÙNG, CUỘN TRANG & CHIA TRANG A4 CHỐNG CẮT
     async executeRegionCapture() {
       if (!this.viewportRect) return;
@@ -586,8 +720,12 @@
       const prevScrollBehavior = document.documentElement.style.scrollBehavior;
 
       const hiddenStickyElements = [];
+      let currentStep = 'Khởi tạo quy trình';
+      let scanWidth = 0;
+      let scanTotalHeight = 0;
 
       try {
+        currentStep = 'Bước 1: Chuẩn bị nội dung & cuộn nạp';
         this.updateProgress(10, '⏳ Bước 1: Chuẩn bị nạp nội dung', 'Đang cuộn nạp tài liệu và kích hoạt hình ảnh lazy-load...');
 
         const maxDocHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, window.innerHeight);
@@ -595,12 +733,14 @@
         // Chuyển đổi từ toạ độ Viewport sang toạ độ Tuyệt đối của trang web
         const scanLeft = Math.max(0, Math.round(this.viewportRect.left + initialScrollX));
         const scanTop = Math.max(0, Math.round(this.viewportRect.top + initialScrollY));
-        const scanWidth = Math.round(this.viewportRect.width);
+        scanWidth = Math.round(this.viewportRect.width);
         const scanBoxHeight = Math.round(this.viewportRect.height);
 
-        const scanTotalHeight = this.mode === 'scroll_down'
+        // Giới hạn chiều cao an toàn tối đa để trình duyệt không bị sập bộ nhớ Canvas (tối đa 15000px)
+        const rawTotalHeight = this.mode === 'scroll_down'
           ? Math.max(maxDocHeight - scanTop, scanBoxHeight)
           : scanBoxHeight;
+        scanTotalHeight = Math.min(rawTotalHeight, 15000);
 
         // Cuộn nạp lười nếu là chế độ cuộn trang
         if (this.mode === 'scroll_down') {
@@ -633,9 +773,9 @@
         this.overlay.style.backdropFilter = 'none';
         this.statusPanel.style.display = 'none';
 
+        currentStep = 'Bước 2: Phân bổ Master Canvas';
         this.updateProgress(30, '📸 Bước 2: Chụp ảnh từng phần', 'Đang quét dữ liệu màn hình theo từng khung hình...');
 
-        const dpr = window.devicePixelRatio || 1;
         const effectiveDpr = Math.min(dpr, 1.25);
 
         const masterCanvas = document.createElement('canvas');
@@ -648,7 +788,7 @@
           masterCtx = masterCanvas.getContext('2d');
         }
         if (!masterCtx) {
-          throw new Error('Trình duyệt không đủ bộ nhớ đồ họa để phân bổ Canvas.');
+          throw new Error('Trình duyệt không đủ bộ nhớ đồ họa để phân bổ Canvas chụp ảnh.');
         }
 
         const bodyBg = window.getComputedStyle(document.body).backgroundColor;
@@ -660,18 +800,26 @@
         let currentScrollY = scanTop;
 
         const safeCaptureVisibleTab = async () => {
-          for (let attempt = 0; attempt < 8; attempt++) {
+          for (let attempt = 0; attempt < 10; attempt++) {
             const captureRes = await new Promise((resolve) => {
-              chrome.runtime.sendMessage({ action: 'CAPTURE_TAB_VIEWPORT' }, resolve);
+              chrome.runtime.sendMessage({ action: 'CAPTURE_TAB_VIEWPORT' }, (resp) => {
+                if (chrome.runtime.lastError) {
+                  resolve({ success: false, error: chrome.runtime.lastError.message });
+                } else {
+                  resolve(resp || { success: false, error: 'Empty response' });
+                }
+              });
             });
             if (captureRes && captureRes.success && captureRes.dataUrl) {
               return captureRes.dataUrl;
             }
+            // Chờ trước khi retry tránh rate limit captureVisibleTab
             await new Promise((r) => setTimeout(r, 650));
           }
-          throw new Error('Trình duyệt giới hạn tốc độ chụp màn hình. Vui lòng thử lại sau.');
+          throw new Error('Trình duyệt giới hạn tốc độ chụp màn hình (captureVisibleTab quota). Hãy đảm bảo tab đang hiển thị và thử lại.');
         };
 
+        currentStep = 'Bước 2: Chụp cuộn từng màn hình';
         while (currentScrollY < scanTop + scanTotalHeight) {
           window.scrollTo(scanLeft, currentScrollY);
           await new Promise(r => setTimeout(r, 450));
@@ -696,6 +844,7 @@
         }
 
         this.statusPanel.style.display = 'flex';
+        currentStep = 'Bước 3: Phân tích DOM chống cắt chữ';
         this.updateProgress(75, '✂️ Bước 3: Phân tích chống cắt dòng chữ', 'Đang nhận diện các phần tử DOM & ngắt trang A4 thông minh...');
 
         const targetPageH = Math.round(scanWidth * 1.4142);
@@ -705,6 +854,7 @@
           targetPageH
         );
 
+        currentStep = 'Bước 4: Chia trang & render Canvas từng trang';
         this.updateProgress(85, '📑 Bước 4: Đóng gói PDF', `Đang tạo ${slices.length} trang PDF chuẩn A4...`);
 
         const pdfPages = [];
@@ -717,6 +867,9 @@
           pageCanvas.width = Math.round(scanWidth * effectiveDpr);
           pageCanvas.height = Math.round(targetPageH * effectiveDpr);
           const pCtx = pageCanvas.getContext('2d');
+          if (!pCtx) {
+            throw new Error(`Không thể tạo ngữ cảnh vẽ cho trang ${i + 1}`);
+          }
 
           pCtx.fillStyle = pageBgColor;
           pCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
@@ -737,6 +890,7 @@
           });
         }
 
+        currentStep = 'Bước 5: Xuất cấu trúc PDF nhị phân';
         this.updateProgress(95, '⏳ Bước 5: Tạo file tải về', 'Đang nén dữ liệu & xuất file PDF...');
 
         const pdfBlob = createPdfFromImages(pdfPages);
@@ -745,6 +899,7 @@
         const pageTitle = sanitizeFilename(document.title || 'Tai_Lieu_Web');
         const cleanName = `${pageTitle}_QuetVung_${Date.now()}.pdf`;
 
+        currentStep = 'Bước 6: Kích hoạt tải file xuống máy';
         // 1. Tải trực tiếp bằng Blob URL trên trang (Nhanh tức thì, không bị giới hạn dung lượng)
         const blobUrl = URL.createObjectURL(pdfBlob);
         const downloadLink = document.createElement('a');
@@ -756,7 +911,7 @@
         setTimeout(() => {
           downloadLink.remove();
           URL.revokeObjectURL(blobUrl);
-        }, 10000);
+        }, 15000);
 
         // 2. Dự phòng qua background download nếu dung lượng vừa phải
         try {
@@ -782,13 +937,13 @@
         }, 3500);
 
       } catch (err) {
-        console.error('OmniLoader Region Scan Error:', err);
-        if (this.statusPanel) {
-          const spinner = this.statusPanel.querySelector('#omni-status-spinner');
-          if (spinner) spinner.style.display = 'none';
-          this.updateProgress(0, '❌ Lỗi xuất PDF', err.message || 'Không thể chụp và tạo file PDF.');
-          setTimeout(() => this.destroy(), 3500);
-        }
+        console.error('OmniLoader Region Scan Error at:', currentStep, err);
+        // Hiển thị hộp chẩn đoán lỗi chi tiết và KHÔNG tự đóng để người dùng sao chép
+        this.showDiagnosticError(currentStep, err, {
+          scanWidth,
+          scanHeight: scanTotalHeight,
+          mode: this.mode
+        });
       } finally {
         document.documentElement.style.overflow = prevOverflow;
         document.documentElement.style.scrollBehavior = prevScrollBehavior;
