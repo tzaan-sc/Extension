@@ -4,7 +4,7 @@
  */
 
 const SubtitleParser = {
-  // Decode HTML entities safely
+  // Decode HTML entities safely (supports both Decimal and Hex Unicode for Vietnamese, Japanese, Chinese, etc.)
   decodeHtml(html) {
     if (!html) return '';
     return html
@@ -15,7 +15,8 @@ const SubtitleParser = {
       .replace(/&#39;/g, "'")
       .replace(/&apos;/g, "'")
       .replace(/&#x2F;/g, '/')
-      .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
+      .replace(/&#x([0-9a-fA-F]+);/g, (match, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(parseInt(dec, 10)));
   },
 
   // Clean and normalize subtitle text
@@ -26,6 +27,24 @@ const SubtitleParser = {
       .replace(/[\n\r]+/g, ' ') // replace newlines with space
       .replace(/\s+/g, ' ') // collapse spaces
       .trim();
+  },
+
+  // Normalize segment durations if d="0" or missing (fixes ASR zero-duration freeze)
+  normalizeSegments(segments) {
+    if (!segments || !Array.isArray(segments) || segments.length === 0) return segments;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (seg.duration <= 0 || seg.end <= seg.start) {
+        if (i + 1 < segments.length && segments[i + 1].start > seg.start) {
+          seg.end = segments[i + 1].start;
+          seg.duration = parseFloat((seg.end - seg.start).toFixed(2));
+        } else {
+          seg.end = parseFloat((seg.start + 3).toFixed(2));
+          seg.duration = 3;
+        }
+      }
+    }
+    return segments;
   },
 
   // Parse JSON3 format
@@ -187,23 +206,31 @@ const SubtitleParser = {
   parse(raw) {
     if (!raw) return [];
 
+    let result = null;
+
     // 1. Try JSON3
     const jsonResult = this.parseJson3(raw);
-    if (jsonResult && jsonResult.length > 0) return jsonResult;
+    if (jsonResult && jsonResult.length > 0) result = jsonResult;
 
     // 2. Try srv3 XML (<p t="" d="">)
-    const srv3Result = this.parseSrv3Xml(raw);
-    if (srv3Result && srv3Result.length > 0) return srv3Result;
+    if (!result) {
+      const srv3Result = this.parseSrv3Xml(raw);
+      if (srv3Result && srv3Result.length > 0) result = srv3Result;
+    }
 
     // 3. Try legacy XML (<text start="" dur="">)
-    const legacyResult = this.parseLegacyXml(raw);
-    if (legacyResult && legacyResult.length > 0) return legacyResult;
+    if (!result) {
+      const legacyResult = this.parseLegacyXml(raw);
+      if (legacyResult && legacyResult.length > 0) result = legacyResult;
+    }
 
     // 4. Try VTT
-    const vttResult = this.parseVtt(raw);
-    if (vttResult && vttResult.length > 0) return vttResult;
+    if (!result) {
+      const vttResult = this.parseVtt(raw);
+      if (vttResult && vttResult.length > 0) result = vttResult;
+    }
 
-    return [];
+    return result ? this.normalizeSegments(result) : [];
   }
 };
 

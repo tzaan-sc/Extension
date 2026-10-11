@@ -3,18 +3,45 @@
  */
 
 const DiffUtils = {
-  // Normalize a single word (remove punctuation, lower case)
+  // Normalize a single word (remove punctuation, lower case, supports both Latin and CJK)
   normalizeWord(word) {
+    if (!word) return '';
     return word
       .toLowerCase()
-      .replace(/[.,/#!$%^&*;:{}=\-_`~()?"'’“”]/g, '')
+      .replace(/[.,/#!$%^&*;:{}=\-_`~()?"'’“”]/g, '') // Latin punctuation
+      .replace(/[。、！？「」『』（）［］【】〜～·《》〈〉]/g, '') // CJK (Chinese, Japanese, Korean) punctuation
       .trim();
   },
 
   // Tokenize text into words preserving original punctuation for display
+  // Uses Intl.Segmenter for Japanese & Chinese (languages without spaces), and standard split for others
   tokenize(text) {
     if (!text) return [];
-    // Match words and remaining tokens
+
+    // Kiểm tra xem câu có chứa chữ Hán/Hiragana/Katakana không
+    const hasCJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(text);
+
+    if (hasCJK && typeof Intl !== 'undefined' && Intl.Segmenter) {
+      try {
+        const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
+        const words = [];
+        for (const seg of segmenter.segment(text)) {
+          const str = seg.segment.trim();
+          if (!str) continue;
+          const normalized = this.normalizeWord(str);
+          // Chỉ thêm nếu có nội dung sau khi chuẩn hóa hoặc có ký tự gốc không phải khoảng trắng
+          if (normalized.length > 0) {
+            words.push({
+              original: seg.segment,
+              normalized: normalized
+            });
+          }
+        }
+        if (words.length > 0) return words;
+      } catch (e) {}
+    }
+
+    // Mặc định cho Tiếng Anh, Tiếng Việt, Tiếng Hàn và các ngôn ngữ có dấu cách thông thường
     const tokens = text.trim().split(/\s+/);
     return tokens.map(token => ({
       original: token,
@@ -102,18 +129,26 @@ const DiffUtils = {
     };
   },
 
-  // Generate masked hint (e.g. "H___ a__ y__?")
+  // Generate masked hint (supports Latin, CJK, Hangul, Vietnamese with Unicode property escapes)
   generateHint(text, level = 1) {
     if (!text) return '';
-    return text.replace(/[a-zA-Z0-9]/g, (char, index) => {
-      if (level === 1) {
-        // Show first letter of each word
-        return index === 0 || text[index - 1] === ' ' ? char : '_';
-      } else {
-        // Hide all
-        return '_';
-      }
-    });
+    try {
+      return text.replace(/[\p{L}\p{N}]/gu, (char, index) => {
+        if (level === 1) {
+          return index === 0 || text[index - 1] === ' ' ? char : '_';
+        } else {
+          return '_';
+        }
+      });
+    } catch (e) {
+      return text.replace(/[a-zA-Z0-9]/g, (char, index) => {
+        if (level === 1) {
+          return index === 0 || text[index - 1] === ' ' ? char : '_';
+        } else {
+          return '_';
+        }
+      });
+    }
   },
 
   // Calculate Levenshtein similarity for single words
