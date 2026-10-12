@@ -6,6 +6,18 @@ export class DocResolverService {
   static detectPlatform(url) {
     if (!url) return null;
     const lower = url.toLowerCase();
+    if (lower.includes('drive.google.com/file/d/') || lower.includes('drive.google.com/open?id=') || lower.includes('drive.google.com/uc?')) {
+      return { platform: 'googledrive', name: 'Google Drive Document' };
+    }
+    if (lower.includes('docs.google.com/document/d/')) {
+      return { platform: 'googledocs', name: 'Google Docs Document' };
+    }
+    if (lower.includes('docs.google.com/presentation/d/')) {
+      return { platform: 'googleslides', name: 'Google Slides Presentation' };
+    }
+    if (lower.includes('docs.google.com/spreadsheets/d/')) {
+      return { platform: 'googlesheets', name: 'Google Sheets Spreadsheet' };
+    }
     if (lower.includes('scribd.com/document') || lower.includes('scribd.com/doc') || lower.includes('scribd.com/presentation')) {
       return { platform: 'scribd', name: 'Scribd Document' };
     }
@@ -35,6 +47,54 @@ export class DocResolverService {
     const platformInfo = this.detectPlatform(docUrl);
     if (!platformInfo) {
       throw new Error('Nền tảng tài liệu chưa được hỗ trợ giải mã tự động.');
+    }
+
+    // Xử lý riêng cho Google Drive & Google Docs/Sheets/Slides
+    if (platformInfo.platform === 'googledrive') {
+      const match = docUrl.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+                    docUrl.match(/drive\.google\.com\/.*[?&]id=([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        const fileId = match[1];
+        return {
+          type: 'direct_download',
+          url: `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`,
+          fallbackUrl: `https://drive.google.com/uc?export=download&id=${fileId}`,
+          filename: `GoogleDrive_${fileId}.pdf`
+        };
+      }
+    }
+
+    if (platformInfo.platform === 'googledocs') {
+      const match = docUrl.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        return {
+          type: 'direct_download',
+          url: `https://docs.google.com/document/d/${match[1]}/export?format=pdf`,
+          filename: `GoogleDoc_${match[1]}.pdf`
+        };
+      }
+    }
+
+    if (platformInfo.platform === 'googleslides') {
+      const match = docUrl.match(/docs\.google\.com\/presentation\/d\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        return {
+          type: 'direct_download',
+          url: `https://docs.google.com/presentation/d/${match[1]}/export/pdf`,
+          filename: `GoogleSlide_${match[1]}.pdf`
+        };
+      }
+    }
+
+    if (platformInfo.platform === 'googlesheets') {
+      const match = docUrl.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        return {
+          type: 'direct_download',
+          url: `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=pdf`,
+          filename: `GoogleSheet_${match[1]}.pdf`
+        };
+      }
     }
 
     // 1. Xử lý riêng cho SlideShare: Trích xuất trọn bộ ảnh slide gốc và đóng gói

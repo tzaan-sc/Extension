@@ -17,7 +17,41 @@ export class MediaSniffer {
     if (!this.memoryCache.has(tabId)) {
       await this.initTab(tabId);
     }
-    return this.memoryCache.get(tabId) || [];
+    const list = this.memoryCache.get(tabId) || [];
+
+    // Tự động kiểm tra nếu URL của Tab là file PDF trực tiếp hoặc Google Drive
+    try {
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      if (tab && tab.url) {
+        const u = tab.url;
+        const lowerU = u.toLowerCase();
+        const cleanU = lowerU.split('?')[0];
+        const isPdf = cleanU.endsWith('.pdf') || lowerU.includes('.pdf?') || (lowerU.startsWith('file:///') && lowerU.endsWith('.pdf'));
+        const isDrive = lowerU.includes('drive.google.com/file/d/') || lowerU.includes('docs.google.com/document/d/');
+
+        if (isPdf && !list.some(item => item.url === u || item.ext === 'pdf')) {
+          const directPdfItem = {
+            id: `tab_doc_pdf_${tabId}`,
+            url: u,
+            tabId: tabId,
+            filename: this.extractFilename(u, [], 'pdf'),
+            title: tab.title || 'Tài liệu PDF',
+            type: 'document',
+            category: 'document',
+            ext: 'pdf',
+            format: 'Tài liệu PDF (Tab hiện tại)',
+            size: 0,
+            sizeFormatted: 'Tài liệu gốc',
+            source: 'tab_url',
+            timestamp: Date.now()
+          };
+          list.unshift(directPdfItem);
+          this.memoryCache.set(tabId, list);
+        }
+      }
+    } catch (e) {}
+
+    return list;
   }
 
   static async addMediaBatch(tabId, items) {
@@ -76,8 +110,8 @@ export class MediaSniffer {
       return false;
     }
 
-    // 3. Loại bỏ file quá nhỏ không phải media thực sự (nhỏ hơn 50KB)
-    if (item.size > 0 && item.size < 51200 && !item.url.includes('.m3u8') && item.ext !== 'srt') {
+    // 3. Loại bỏ file quá nhỏ không phải media thực sự (nhỏ hơn 50KB, nhưng không áp dụng cho PDF hay phụ đề)
+    if (item.size > 0 && item.size < 51200 && !item.url.includes('.m3u8') && item.ext !== 'srt' && item.ext !== 'pdf' && item.category !== 'document') {
       return false;
     }
 
@@ -124,9 +158,13 @@ export class MediaSniffer {
       return { type: 'video', category: 'video', ext: 'mp4', format: 'Video' };
     }
 
-    // 4. Tài liệu PDF
-    if (cleanUrl.endsWith('.pdf') || mime.includes('application/pdf')) {
-      return { type: 'document', category: 'document', ext: 'pdf', format: 'PDF Document' };
+    // 4. Tài liệu PDF & Google Drive
+    if (cleanUrl.endsWith('.pdf') || url.toLowerCase().includes('.pdf?') || mime.includes('application/pdf')) {
+      return { type: 'document', category: 'document', ext: 'pdf', format: 'Tài liệu PDF' };
+    }
+
+    if (url.includes('drive.usercontent.google.com/download') || (url.includes('drive.google.com/uc?') && url.includes('export=download'))) {
+      return { type: 'document', category: 'document', ext: 'pdf', format: 'Google Drive PDF' };
     }
 
     return null;

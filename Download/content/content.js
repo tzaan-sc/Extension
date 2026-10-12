@@ -20,17 +20,23 @@
       const { url, title } = event.data;
       if (url.includes('&range=') || url.includes('chunk_')) return;
 
+      const isPdf = url.toLowerCase().includes('.pdf');
       const isM3u8 = url.includes('.m3u8');
       const isAudio = url.includes('.mp3') || url.includes('.m4a') || url.includes('.wav');
+
+      const ext = isPdf ? 'pdf' : (isM3u8 ? 'm3u8' : (isAudio ? 'mp3' : 'mp4'));
+      const cat = isPdf ? 'document' : (isAudio ? 'audio' : 'video');
+      const typ = isPdf ? 'document' : (isM3u8 ? 'hls' : (isAudio ? 'audio' : 'video'));
+      const fmt = isPdf ? 'Tài liệu PDF' : (isM3u8 ? 'HLS Stream (m3u8)' : (isAudio ? 'Audio Stream' : 'Video MP4'));
 
       reportSingleMedia({
         id: `sniff_${url.split('?')[0].substr(-25)}`,
         url: url,
-        filename: `${sanitizeFilename(title || document.title)}.${isM3u8 ? 'mp4' : (isAudio ? 'mp3' : 'mp4')}`,
-        type: isM3u8 ? 'hls' : (isAudio ? 'audio' : 'video'),
-        category: isAudio ? 'audio' : 'video',
-        ext: isM3u8 ? 'm3u8' : (isAudio ? 'mp3' : 'mp4'),
-        format: isM3u8 ? 'HLS Stream (m3u8)' : (isAudio ? 'Audio Stream' : 'Video MP4'),
+        filename: `${sanitizeFilename(title || document.title)}.${ext === 'm3u8' ? 'mp4' : ext}`,
+        type: typ,
+        category: cat,
+        ext: ext,
+        format: fmt,
         source: 'dom_hook'
       });
     }
@@ -230,14 +236,22 @@
       }
     });
 
-    // Tài liệu PDF nhúng
-    document.querySelectorAll('embed[type="application/pdf"], iframe[src*=".pdf"], a[href$=".pdf"]').forEach((el, idx) => {
-      const src = el.src || el.href;
-      if (src && !src.startsWith('blob:')) {
+    // 3. Tài liệu PDF nhúng (Embed, Object, Iframe, Link)
+    const pdfSelectors = [
+      'embed[type="application/pdf"]',
+      'embed[src*=".pdf" i]',
+      'object[type="application/pdf"]',
+      'object[data*=".pdf" i]',
+      'iframe[src*=".pdf" i]',
+      'a[href*=".pdf" i]'
+    ];
+    document.querySelectorAll(pdfSelectors.join(', ')).forEach((el, idx) => {
+      const src = el.src || el.data || el.href;
+      if (src && !src.includes('&range=')) {
         batch.push({
-          id: `dom_doc_${idx}_${src.substring(0, 30)}`,
+          id: `dom_doc_${idx}_${src.substring(0, 35)}`,
           url: src,
-          filename: `${sanitizeFilename(document.title)}.pdf`,
+          filename: `${sanitizeFilename(document.title || 'Tai_Lieu')}.pdf`,
           type: 'document',
           category: 'document',
           ext: 'pdf',
@@ -247,20 +261,63 @@
       }
     });
 
-    // Tài liệu Canvas học liệu (Scribd, Studocu, Canvas LMS, Quizlet)
-    const canvases = Array.from(document.querySelectorAll('canvas')).filter(c => c.width > 120 && c.height > 120);
-    if (canvases.length > 0) {
+    // 4. Nhận diện Google Drive / Google Docs / Sheets / Slides trực tiếp trên trang
+    const href = window.location.href;
+    const driveMatch = href.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+                       href.match(/drive\.google\.com\/.*[?&]id=([a-zA-Z0-9_-]+)/);
+    if (driveMatch) {
+      const fileId = driveMatch[1];
       batch.push({
-        id: `canvas_doc_${canvases.length}p`,
+        id: `gdrive_file_${fileId}`,
+        url: `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`,
+        filename: `${sanitizeFilename(document.title || 'GoogleDrive_File')}.pdf`,
+        title: document.title || 'Google Drive File',
+        type: 'document',
+        category: 'document',
+        ext: 'pdf',
+        format: 'Google Drive Document (Gốc)',
+        sizeFormatted: 'Google Drive',
+        source: 'google_drive'
+      });
+    }
+
+    const docsMatch = href.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
+    if (docsMatch) {
+      batch.push({
+        id: `gdocs_${docsMatch[1]}`,
+        url: `https://docs.google.com/document/d/${docsMatch[1]}/export?format=pdf`,
+        filename: `${sanitizeFilename(document.title || 'GoogleDoc')}.pdf`,
+        title: document.title || 'Google Doc',
+        type: 'document',
+        category: 'document',
+        ext: 'pdf',
+        format: 'Google Docs (Xuất PDF)',
+        sizeFormatted: 'Google Docs',
+        source: 'google_drive'
+      });
+    }
+
+    // 5. Tài liệu Canvas & Ảnh nhiều trang học liệu (Google Drive view-only, Scribd, Studocu, Quizlet...)
+    const canvases = Array.from(document.querySelectorAll('canvas')).filter(c => c.width > 120 && c.height > 120);
+    const driveImgs = Array.from(document.querySelectorAll('img')).filter(img => {
+      const src = img.src || '';
+      return (src.startsWith('blob:') || src.includes('googleusercontent.com') || src.includes('drive.google.com')) &&
+             (img.naturalWidth > 200 || img.width > 200);
+    });
+
+    const docPagesCount = Math.max(canvases.length, driveImgs.length);
+    if (docPagesCount > 0) {
+      batch.push({
+        id: `canvas_doc_${docPagesCount}p`,
         url: window.location.href,
         title: document.title || 'Tài liệu học tập',
-        filename: `${sanitizeFilename(document.title)}.pdf`,
+        filename: `${sanitizeFilename(document.title || 'Tai_Lieu')}.pdf`,
         type: 'canvas_pdf',
         category: 'document',
         ext: 'pdf',
-        quality: `${canvases.length} trang`,
-        format: `Tài liệu Canvas (${canvases.length} trang)`,
-        sizeFormatted: `${canvases.length} trang PDF`,
+        quality: `${docPagesCount} trang`,
+        format: `Tài liệu (${docPagesCount} trang)`,
+        sizeFormatted: `${docPagesCount} trang PDF`,
         source: 'dom_canvas'
       });
     }

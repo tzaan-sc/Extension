@@ -266,6 +266,65 @@ body {
   background: rgba(16, 185, 129, 0.2);
 }
 
+/* Google Drive & Direct PDF Hero Card */
+.gdrive-hero-card, .direct-pdf-hero-card {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(16, 185, 129, 0.15));
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.direct-pdf-hero-card {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(59, 130, 246, 0.15));
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.gdrive-hero-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.badge-gdrive {
+  background: rgba(59, 130, 246, 0.25);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.gdrive-hero-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.gdrive-hero-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gdrive-hero-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-gdrive-direct {
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan)) !important;
+  box-shadow: 0 2px 8px rgba(6, 182, 212, 0.3) !important;
+}
+
+.btn-gdrive-bypass {
+  background: linear-gradient(135deg, var(--accent-amber), var(--accent-rose)) !important;
+  box-shadow: 0 2px 8px rgba(244, 63, 94, 0.3) !important;
+}
+
 /* Document VIP Resolver Box */
 .doc-vip-box {
   background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(99, 102, 241, 0.15));
