@@ -57,8 +57,8 @@ export class DocResolverService {
         const fileId = match[1];
         return {
           type: 'direct_download',
-          url: `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`,
-          fallbackUrl: `https://drive.google.com/uc?export=download&id=${fileId}`,
+          url: `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`,
+          fallbackUrl: `https://drive.google.com/u/0/uc?id=${fileId}&export=download`,
           filename: `GoogleDrive_${fileId}.pdf`
         };
       }

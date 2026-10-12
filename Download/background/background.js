@@ -248,9 +248,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === 'DOWNLOAD_DIRECT') {
     const { url, filename } = message;
-    const safeFilename = (filename || 'download_file')
-      .replace(/[\\/:*?"<>|]/g, '_')
+    let safeFilename = (filename || 'download_file')
+      .replace(/[\x00-\x1f\x7f-\x9f\\/:*?"<>|]/g, '_')
+      .replace(/[\s.]+$/, '')
       .trim();
+
+    if (filename && filename.toLowerCase().endsWith('.pdf') && !safeFilename.toLowerCase().endsWith('.pdf')) {
+      safeFilename += '.pdf';
+    }
 
     chrome.downloads.download(
       {
@@ -259,8 +264,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         saveAs: false
       },
       (downloadId) => {
-        if (chrome.runtime.lastError) {
-          sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        if (chrome.runtime.lastError || !downloadId) {
+          sendResponse({ success: false, error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'Lỗi tải file' });
         } else {
           sendResponse({ success: true, downloadId });
         }
@@ -337,7 +342,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             filename: result.filename,
             saveAs: false
           }, (dlId) => {
-            sendResponse({ success: true, downloadId: dlId, message: 'Đã bắt đầu tải file PDF gốc!' });
+            if (chrome.runtime.lastError || !dlId) {
+              sendResponse({ success: false, error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'Lỗi bắt đầu tải file PDF' });
+            } else {
+              sendResponse({ success: true, downloadId: dlId, message: 'Đã bắt đầu tải file PDF gốc!' });
+            }
           });
         } else {
           sendResponse({ success: true, result });

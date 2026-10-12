@@ -110,6 +110,115 @@ function createPdfFromImages(images) {
   return new Blob([buffer], { type: 'application/pdf' });
 }
 
+function formatPdfFilename(title, fallback = 'Tai_Lieu') {
+  let name = (title || fallback).trim();
+  name = name.replace(/(\.pdf)+$/i, '').trim();
+  name = name.replace(/[\x00-\x1f\x7f-\x9f\\/:*?"<>|]/g, '_').trim();
+  name = name.replace(/[\s.]+$/, '').trim();
+  if (!name) name = fallback;
+  return `${name}.pdf`;
+}
+
+async function ensureJpegDataUrl(page) {
+  if (page.dataUrl && page.dataUrl.startsWith('data:image/jpeg')) {
+    return page;
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const w = img.naturalWidth || page.width || 800;
+      const h = img.naturalHeight || page.height || 1100;
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      resolve({
+        ...page,
+        width: w,
+        height: h,
+        dataUrl: jpegDataUrl
+      });
+    };
+    img.onerror = () => {
+      resolve(page);
+    };
+    img.src = page.dataUrl || page.url;
+  });
+}
+
+async function downloadFileDirectly(url, filename) {
+  if (!url) return false;
+  const safeFilename = formatPdfFilename(filename);
+
+  if (url.startsWith('file:///')) {
+    alert('Đây là tệp PDF cục bộ đã có sẵn trên máy tính của bạn.\nĐường dẫn: ' + decodeURIComponent(url.replace('file:///', '')));
+    return true;
+  }
+
+  // Tầng 1: Thử Chrome Downloads API trực tiếp
+  try {
+    const downloadId = await new Promise((resolve) => {
+      chrome.downloads.download({
+        url: url,
+        filename: safeFilename,
+        saveAs: false
+      }, (id) => {
+        if (chrome.runtime.lastError || !id) resolve(null);
+        else resolve(id);
+      });
+    });
+    if (downloadId) return true;
+  } catch (e) {}
+
+  // Tầng 2: Thử fetch qua quyền mở rộng và tải qua Object URL
+  try {
+    const resp = await fetch(url);
+    if (resp.ok) {
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const dlId = await new Promise((resolve) => {
+        chrome.downloads.download({
+          url: blobUrl,
+          filename: safeFilename,
+          saveAs: false
+        }, (id) => {
+          if (chrome.runtime.lastError || !id) resolve(null);
+          else resolve(id);
+        });
+      });
+      if (!dlId) {
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = safeFilename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      return true;
+    }
+  } catch (e) {}
+
+  // Tầng 3: Thẻ A dự phòng
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = safeFilename;
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function detectVipDocPlatform(url) {
   if (!url) return null;
   const u = url.toLowerCase();
@@ -122,8 +231,8 @@ function detectVipDocPlatform(url) {
       name: 'Google Drive Document',
       type: 'googledrive',
       fileId: fileId,
-      directUrl: `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`,
-      getUrl: () => `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`
+      directUrl: `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`,
+      getUrl: () => `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`
     };
   }
 
@@ -265,7 +374,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           items.unshift({
             id: `tab_direct_pdf_${currentTab.id}`,
             url: u,
-            filename: `${(currentTab.title || 'Tai_Lieu').replace(/[\\/:*?"<>|]/g, '_')}.pdf`,
+            filename: formatPdfFilename(currentTab.title || 'Tai_Lieu'),
             title: currentTab.title || 'Tài liệu PDF gốc',
             type: 'document',
             category: 'document',
@@ -278,8 +387,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           const fileId = driveMatch[1];
           items.unshift({
             id: `tab_gdrive_${fileId}`,
-            url: `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`,
-            filename: `${(currentTab.title || 'GoogleDrive_File').replace(/[\\/:*?"<>|]/g, '_')}.pdf`,
+            url: `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`,
+            filename: formatPdfFilename(currentTab.title || 'GoogleDrive_File'),
             title: currentTab.title || 'Tài liệu Google Drive',
             type: 'document',
             category: 'document',
@@ -292,7 +401,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           items.unshift({
             id: `tab_gdocs_${docsMatch[1]}`,
             url: `https://docs.google.com/document/d/${docsMatch[1]}/export?format=pdf`,
-            filename: `${(currentTab.title || 'GoogleDoc').replace(/[\\/:*?"<>|]/g, '_')}.pdf`,
+            filename: formatPdfFilename(currentTab.title || 'GoogleDoc'),
             title: currentTab.title || 'Google Docs',
             type: 'document',
             category: 'document',
@@ -375,118 +484,158 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (btnElement) btnElement.innerHTML = `<span>⏳ Đang cuộn nạp tất cả trang...</span>`;
 
     try {
+      // Thực thi trên tất cả frames để hỗ trợ cả iframe viewer của Google Drive / PDF
       const results = await chrome.scripting.executeScript({
-        target: { tabId: currentTab.id },
+        target: { tabId: currentTab.id, allFrames: true },
         func: async () => {
-          // 1. Tìm các container có khả năng cuộn chứa tài liệu (Google Drive, Scribd, Studocu, PDF viewer...)
-          const scrollableElements = [];
+          const capturedPages = new Map();
 
-          // Google Drive viewer elements
-          const driveViewer = document.querySelector('.drive-viewer-scrollable, [role="main"], .ndfHFb-c4YZDc-bN97Pc, [data-target="viewer"]');
-          if (driveViewer && driveViewer.scrollHeight > driveViewer.clientHeight + 100) {
+          // 1. Tìm container cuộn chứa tài liệu
+          const scrollableElements = [];
+          const driveViewer = document.querySelector('.drive-viewer-scrollable, [role="main"], .ndfHFb-c4YZDc-bN97Pc, [data-target="viewer"], [role="document"]');
+          if (driveViewer && driveViewer.scrollHeight > driveViewer.clientHeight + 80) {
             scrollableElements.push(driveViewer);
           }
 
-          // Quét tất cả các phần tử có overflow scroll/auto khác
           document.querySelectorAll('div, section, main, article').forEach(el => {
             const s = window.getComputedStyle(el);
-            if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 150) {
+            if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 120) {
               if (!scrollableElements.includes(el)) scrollableElements.push(el);
             }
           });
 
-          // 2. Cuộn từng scroller và cả window để kích hoạt Lazy-load
           const scroller = scrollableElements[0] || null;
+
+          // 2. Hàm quét các trang hiện đang hiển thị trong DOM (In-Flight Capture)
+          async function scanCurrentView() {
+            const scrollOffset = scroller ? scroller.scrollTop : window.scrollY;
+
+            // A. Quét Canvas (PDF.js, Scribd, Studocu, test_document.html...)
+            const canvases = document.querySelectorAll('canvas');
+            for (const c of canvases) {
+              if (c.width > 120 && c.height > 120) {
+                const rect = c.getBoundingClientRect();
+                const topPos = Math.round(rect.top + scrollOffset);
+                const key = `cv_${topPos}_${c.width}_${c.height}`;
+                if (!capturedPages.has(key)) {
+                  try {
+                    const dataUrl = c.toDataURL('image/jpeg', 0.92);
+                    capturedPages.set(key, {
+                      top: topPos,
+                      width: c.width,
+                      height: c.height,
+                      dataUrl: dataUrl
+                    });
+                  } catch (e) {}
+                }
+              }
+            }
+
+            // B. Quét Ảnh (Google Drive blob images, CDN images, SlideShare...)
+            const allImgs = Array.from(document.querySelectorAll('img')).filter(img => {
+              const src = img.currentSrc || img.src || '';
+              if (!src || src.startsWith('data:image/svg')) return false;
+              const isDoc = src.startsWith('blob:') ||
+                            src.includes('googleusercontent.com') ||
+                            src.includes('drive.google.com') ||
+                            src.includes('slidesharecdn') ||
+                            src.includes('studocu') ||
+                            src.includes('scribd') ||
+                            img.closest('.page, .page-container, .drive-viewer, .doc-page, [data-page-index], [role="region"]');
+              const w = img.naturalWidth || img.width || 0;
+              const h = img.naturalHeight || img.height || 0;
+              return (isDoc || (w > 250 && h > 250)) && w > 120 && h > 120;
+            });
+
+            for (const img of allImgs) {
+              const src = img.currentSrc || img.src || '';
+              const rect = img.getBoundingClientRect();
+              const topPos = Math.round(rect.top + scrollOffset);
+              const w = img.naturalWidth || img.width || 600;
+              const h = img.naturalHeight || img.height || 850;
+              const key = `im_${topPos}_${w}_${h}`;
+
+              if (!capturedPages.has(key)) {
+                let dataUrl = null;
+
+                // Nếu là blob URL: fetch cùng origin và đọc qua FileReader (100% không bị chặn hoặc taint canvas)
+                if (src.startsWith('blob:')) {
+                  try {
+                    const resp = await fetch(src);
+                    if (resp.ok) {
+                      const b = await resp.blob();
+                      dataUrl = await new Promise((res) => {
+                        const fr = new FileReader();
+                        fr.onloadend = () => res(fr.result);
+                        fr.readAsDataURL(b);
+                      });
+                    }
+                  } catch (e) {}
+                }
+
+                // Nếu chưa có dataUrl, thử vẽ lên canvas
+                if (!dataUrl) {
+                  try {
+                    const offCanvas = document.createElement('canvas');
+                    offCanvas.width = w;
+                    offCanvas.height = h;
+                    const ctx = offCanvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, w, h);
+                    ctx.drawImage(img, 0, 0, w, h);
+                    dataUrl = offCanvas.toDataURL('image/jpeg', 0.92);
+                  } catch (e) {
+                    // Nếu bị tainted do cross-origin, ta lưu link src để popup tải ngoài
+                  }
+                }
+
+                capturedPages.set(key, {
+                  top: topPos,
+                  width: w,
+                  height: h,
+                  dataUrl: dataUrl,
+                  url: dataUrl ? null : src
+                });
+              }
+            }
+          }
+
+          // 3. Quét ngay vị trí hiện tại
+          await scanCurrentView();
+
+          // 4. Cuộn từ từ từ trên xuống dưới và quét tại TỪNG BƯỚC (trước khi DOM bị unmount)
           const totalHeight = scroller ? scroller.scrollHeight : Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, 2500);
           const viewportH = scroller ? scroller.clientHeight : window.innerHeight;
-          const step = Math.max(viewportH * 0.75, 400);
+          const step = Math.max(Math.round(viewportH * 0.75), 400);
 
           let currentY = 0;
           while (currentY < totalHeight) {
-            if (scroller) scroller.scrollTop = currentY;
-            window.scrollTo(0, currentY);
             currentY += step;
-            await new Promise(r => setTimeout(r, 160));
-          }
-
-          // Cuộn lại đầu trang
-          if (scroller) scroller.scrollTop = 0;
-          window.scrollTo(0, 0);
-          await new Promise(r => setTimeout(r, 300));
-
-          // 3. Thu thập các trang tài liệu
-          const rawPages = [];
-
-          // A. Thu thập Canvas (PDF.js, Canva, Studocu, Canvas LMS...)
-          const canvases = document.querySelectorAll('canvas');
-          canvases.forEach(c => {
-            if (c.width > 120 && c.height > 120) {
-              try {
-                const rect = c.getBoundingClientRect();
-                const topPos = rect.top + (scroller ? scroller.scrollTop : window.scrollY);
-                const dataUrl = c.toDataURL('image/jpeg', 0.95);
-                rawPages.push({
-                  top: topPos,
-                  width: c.width,
-                  height: c.height,
-                  dataUrl: dataUrl
-                });
-              } catch (e) {}
+            if (scroller) {
+              scroller.scrollTop = currentY;
+              scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
             }
-          });
+            window.scrollTo(0, currentY);
+            window.dispatchEvent(new Event('scroll', { bubbles: true }));
 
-          // B. Thu thập hình ảnh trang (Google Drive blob images, googleusercontent, .page img, SlideShare...)
-          const allImgs = Array.from(document.querySelectorAll('img')).filter(img => {
-            const src = img.currentSrc || img.src || '';
-            const isDocImg = src.startsWith('blob:') ||
-                             src.includes('googleusercontent.com') ||
-                             src.includes('drive.google.com') ||
-                             src.includes('slidesharecdn') ||
-                             img.closest('.page, .page-container, .drive-viewer, .doc-page, [data-page-index]');
-            const w = img.naturalWidth || img.width || 0;
-            const h = img.naturalHeight || img.height || 0;
-            return (isDocImg || (w > 250 && h > 250)) && w > 120 && h > 120;
-          });
-
-          for (const img of allImgs) {
-            try {
-              const rect = img.getBoundingClientRect();
-              const topPos = rect.top + (scroller ? scroller.scrollTop : window.scrollY);
-              const w = img.naturalWidth || img.width || 600;
-              const h = img.naturalHeight || img.height || 850;
-
-              // Vẽ lên canvas để xuất JPEG chất lượng cao
-              const offCanvas = document.createElement('canvas');
-              offCanvas.width = w;
-              offCanvas.height = h;
-              const ctx = offCanvas.getContext('2d');
-              ctx.drawImage(img, 0, 0, w, h);
-              const dataUrl = offCanvas.toDataURL('image/jpeg', 0.95);
-
-              rawPages.push({
-                top: topPos,
-                width: w,
-                height: h,
-                dataUrl: dataUrl
-              });
-            } catch (e) {}
+            await new Promise(r => setTimeout(r, 200));
+            await scanCurrentView();
           }
 
-          // C. Sắp xếp thứ tự trang theo vị trí từ trên xuống dưới (top) và loại bỏ trùng lặp
+          // Đợi thêm và quét lần cuối ở chân trang
+          await new Promise(r => setTimeout(r, 250));
+          await scanCurrentView();
+
+          // 5. Sắp xếp danh sách trang theo toạ độ dọc từ trên xuống dưới
+          const rawPages = Array.from(capturedPages.values());
           rawPages.sort((a, b) => a.top - b.top);
 
+          // Loại bỏ các ảnh trùng lặp có toạ độ quá sát nhau (dưới 50px)
           const finalPages = [];
-          const seenData = new Set();
           for (const p of rawPages) {
-            const signature = p.dataUrl.slice(0, 100) + '_' + p.width + '_' + p.height;
-            if (!seenData.has(signature)) {
-              seenData.add(signature);
-              finalPages.push({
-                pageNumber: finalPages.length + 1,
-                width: p.width,
-                height: p.height,
-                dataUrl: p.dataUrl
-              });
+            const exists = finalPages.some(ex => Math.abs(ex.top - p.top) < 50);
+            if (!exists) {
+              finalPages.push(p);
             }
           }
 
@@ -494,25 +643,86 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
 
-      const res = results && results[0] ? results[0].result : null;
-      if (res && res.pages && res.pages.length > 0) {
-        if (btnElement) btnElement.innerHTML = `<span>⏳ Đang đóng gói PDF (${res.pages.length} trang)...</span>`;
-        const pdfBlob = createPdfFromImages(res.pages);
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const cleanTitle = (res.title || 'Tai_Lieu').replace(/[\\/:*?"<>|]/g, '_').trim();
-          chrome.runtime.sendMessage({
-            action: 'DOWNLOAD_DIRECT',
-            url: reader.result,
-            filename: `${cleanTitle}.pdf`
-          }, () => {
-            if (btnElement) {
-              btnElement.innerHTML = `<span>✓ Đã tải PDF (${res.pages.length} trang)!</span>`;
-              setTimeout(() => { btnElement.innerHTML = oldText; }, 3000);
+      // Lấy kết quả từ frame thu thập được nhiều trang nhất
+      let bestResult = null;
+      if (results && results.length > 0) {
+        for (const r of results) {
+          if (r && r.result && r.result.pages && r.result.pages.length > 0) {
+            if (!bestResult || r.result.pages.length > bestResult.pages.length) {
+              bestResult = r.result;
             }
-          });
-        };
-        reader.readAsDataURL(pdfBlob);
+          }
+        }
+      }
+
+      if (bestResult && bestResult.pages && bestResult.pages.length > 0) {
+        if (btnElement) btnElement.innerHTML = `<span>⏳ Đang xử lý ${bestResult.pages.length} trang...</span>`;
+
+        // Chuẩn hóa và chuyển đổi tất cả trang thành JPEG chất lượng cao
+        const preparedPages = [];
+        for (const p of bestResult.pages) {
+          if (p.dataUrl) {
+            const ready = await ensureJpegDataUrl(p);
+            preparedPages.push(ready);
+          } else if (p.url) {
+            try {
+              const resp = await fetch(p.url);
+              if (resp.ok) {
+                const b = await resp.blob();
+                const dUrl = await new Promise((res) => {
+                  const fr = new FileReader();
+                  fr.onloadend = () => res(fr.result);
+                  fr.readAsDataURL(b);
+                });
+                const ready = await ensureJpegDataUrl({ ...p, dataUrl: dUrl });
+                preparedPages.push(ready);
+              }
+            } catch (err) {}
+          }
+        }
+
+        if (preparedPages.length === 0) {
+          if (btnElement) {
+            btnElement.innerHTML = `<span>Không thể xuất trang</span>`;
+            setTimeout(() => { btnElement.innerHTML = oldText; }, 2500);
+          }
+          return;
+        }
+
+        if (btnElement) btnElement.innerHTML = `<span>⏳ Đang đóng gói PDF (${preparedPages.length} trang)...</span>`;
+        const pdfBlob = createPdfFromImages(preparedPages);
+        if (!pdfBlob) {
+          if (btnElement) {
+            btnElement.innerHTML = `<span>Lỗi tạo PDF</span>`;
+            setTimeout(() => { btnElement.innerHTML = oldText; }, 2500);
+          }
+          return;
+        }
+
+        const safeFilename = formatPdfFilename(bestResult.title || currentTab.title || 'Tai_Lieu');
+        const blobUrl = URL.createObjectURL(pdfBlob);
+
+        chrome.downloads.download({
+          url: blobUrl,
+          filename: safeFilename,
+          saveAs: false
+        }, (downloadId) => {
+          if (chrome.runtime.lastError || !downloadId) {
+            // Dự phòng: Click qua thẻ A trong popup
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = safeFilename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+          }
+
+          if (btnElement) {
+            btnElement.innerHTML = `<span>✓ Đã tải PDF (${preparedPages.length} trang)!</span>`;
+            setTimeout(() => { btnElement.innerHTML = oldText; }, 3500);
+          }
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        });
       } else {
         if (btnElement) {
           btnElement.innerHTML = `<span>Không tìm thấy trang tài liệu</span>`;
@@ -521,7 +731,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (err) {
       if (btnElement) {
-        btnElement.innerHTML = `<span>Lỗi xuất PDF</span>`;
+        btnElement.innerHTML = `<span>Lỗi xuất PDF: ${err.message || 'Thử lại'}</span>`;
         setTimeout(() => { btnElement.innerHTML = oldText; }, 3000);
       }
     }
@@ -564,16 +774,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const btnDirect = gdriveCard.querySelector('#btnGdriveHeroDirect');
         if (btnDirect && driveInfo?.directUrl) {
-          btnDirect.addEventListener('click', () => {
-            btnDirect.innerHTML = `<span>⏳ Đang tải...</span>`;
-            chrome.runtime.sendMessage({
-              action: 'DOWNLOAD_DIRECT',
-              url: driveInfo.directUrl,
-              filename: `${(currentTab.title || 'GoogleDrive_File').replace(/[\\/:*?"<>|]/g, '_')}.pdf`
-            }, (res) => {
-              btnDirect.innerHTML = (res && res.success) ? `<span>✓ Đã tải file!</span>` : `<span>Lỗi tải</span>`;
-              setTimeout(() => { btnDirect.innerHTML = `<span>⚡ Tải File Gốc</span>`; }, 2500);
-            });
+          btnDirect.addEventListener('click', async () => {
+            const oldText = btnDirect.innerHTML;
+            btnDirect.disabled = true;
+            btnDirect.innerHTML = `<span>⏳ Đang tải file gốc...</span>`;
+            const ok = await downloadFileDirectly(driveInfo.directUrl, currentTab.title || 'GoogleDrive_File');
+            if (ok) {
+              btnDirect.innerHTML = `<span>✓ Đã tải file gốc!</span>`;
+              setTimeout(() => { btnDirect.disabled = false; btnDirect.innerHTML = oldText; }, 2500);
+            } else {
+              // File bị chủ sở hữu chặn tải trực tiếp (View-only) -> Tự động chuyển sang quét & gom PDF
+              btnDirect.innerHTML = `<span>🔒 File bị khóa -> Đang vượt chặn...</span>`;
+              await triggerExportPdf(btnDirect);
+              btnDirect.disabled = false;
+              btnDirect.innerHTML = oldText;
+            }
           });
         }
 
@@ -603,18 +818,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             </button>
           </div>
         `;
-        directPdfCard.querySelector('#btnDirectPdfDownload').addEventListener('click', (e) => {
-          const btn = e.currentTarget;
-          btn.innerHTML = `<span>⏳ Đang tải...</span>`;
-          chrome.runtime.sendMessage({
-            action: 'DOWNLOAD_DIRECT',
-            url: currentTab.url,
-            filename: `${(currentTab.title || 'Tai_Lieu').replace(/[\\/:*?"<>|]/g, '_')}.pdf`
-          }, (res) => {
-            btn.innerHTML = (res && res.success) ? `<span>✓ Đã tải!</span>` : `<span>Lỗi tải</span>`;
-            setTimeout(() => { btn.innerHTML = `<span>📥 Tải File PDF Về Máy</span>`; }, 2500);
-          });
+
+        const btnPdf = directPdfCard.querySelector('#btnDirectPdfDownload');
+        btnPdf.addEventListener('click', async () => {
+          const oldText = btnPdf.innerHTML;
+          btnPdf.disabled = true;
+          btnPdf.innerHTML = `<span>⏳ Đang tải file PDF...</span>`;
+          const ok = await downloadFileDirectly(currentTab.url, currentTab.title || 'Tai_Lieu');
+          btnPdf.innerHTML = ok ? `<span>✓ Đã tải file PDF!</span>` : `<span>Lỗi tải</span>`;
+          setTimeout(() => { btnPdf.disabled = false; btnPdf.innerHTML = oldText; }, 2500);
         });
+
         mediaContainer.appendChild(directPdfCard);
         renderedCount++;
       }
@@ -915,15 +1129,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     };
 
-    // Đối với tài liệu PDF hoặc file từ Google Drive: Dùng trực tiếp Chrome Downloads API với session người dùng
-    if (item.category === 'document' || item.ext === 'pdf' || item.url.startsWith('data:') || item.source === 'google_drive') {
-      chrome.runtime.sendMessage({
-        action: 'DOWNLOAD_DIRECT',
-        url: item.url,
-        filename: item.filename || `Tai_Lieu_${Date.now()}.${item.ext || 'pdf'}`
-      }, (res) => {
-        onFinish(res && res.success);
-      });
+    // Đối với tài liệu PDF hoặc file từ Google Drive: Tải bằng bộ điều phối 4 tầng
+    if (item.category === 'document' || item.ext === 'pdf' || item.source === 'google_drive') {
+      const ok = await downloadFileDirectly(item.url, item.filename || `Tai_Lieu_${Date.now()}.${item.ext || 'pdf'}`);
+      onFinish(ok);
       return;
     }
 

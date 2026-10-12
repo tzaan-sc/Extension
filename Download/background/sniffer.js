@@ -163,7 +163,7 @@ export class MediaSniffer {
       return { type: 'document', category: 'document', ext: 'pdf', format: 'Tài liệu PDF' };
     }
 
-    if (url.includes('drive.usercontent.google.com/download') || (url.includes('drive.google.com/uc?') && url.includes('export=download'))) {
+    if (url.includes('drive.google.com/uc?') || url.includes('drive.usercontent.google.com/download') || (url.includes('drive.google.com') && url.includes('export=download'))) {
       return { type: 'document', category: 'document', ext: 'pdf', format: 'Google Drive PDF' };
     }
 

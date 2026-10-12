@@ -16,8 +16,8 @@ export class DocResolver {
         type: 'googledrive',
         icon: '📁',
         fileId: fileId,
-        directDownloadUrl: `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`,
-        resolverUrl: () => `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`
+        directDownloadUrl: `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`,
+        resolverUrl: () => `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`
       };
     }
 

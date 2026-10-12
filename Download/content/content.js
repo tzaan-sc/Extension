@@ -269,7 +269,7 @@
       const fileId = driveMatch[1];
       batch.push({
         id: `gdrive_file_${fileId}`,
-        url: `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`,
+        url: `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`,
         filename: `${sanitizeFilename(document.title || 'GoogleDrive_File')}.pdf`,
         title: document.title || 'Google Drive File',
         type: 'document',
