@@ -534,28 +534,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 1. GIAO DIỆN CHUYÊN BIỆT CHO TAB TÀI LIỆU (DOCUMENTS)
     if (currentCategory === 'document') {
-      // A. Nếu đang mở Google Drive hoặc Direct PDF: Hiển thị Thẻ tiện ích chuyên sâu
       const isCurrentDrive = currentTab?.url && (currentTab.url.includes('drive.google.com') || currentTab.url.includes('docs.google.com'));
       const isCurrentPdf = currentTab?.url && (currentTab.url.toLowerCase().split('?')[0].endsWith('.pdf') || currentTab.url.toLowerCase().includes('.pdf?') || (currentTab.url.startsWith('file:///') && currentTab.url.toLowerCase().endsWith('.pdf')));
 
+      // A. Thẻ ngữ cảnh chính (Hero Card) nếu đang ở trang Google Drive hoặc Direct PDF
       if (isCurrentDrive) {
         const driveInfo = detectVipDocPlatform(currentTab.url);
         const gdriveCard = document.createElement('div');
-        gdriveCard.className = 'gdrive-hero-card';
+        gdriveCard.className = 'doc-context-card gdrive';
         gdriveCard.innerHTML = `
-          <div class="gdrive-hero-header">
-            <span class="badge badge-gdrive">📁 GOOGLE DRIVE CHUYÊN SÂU</span>
-            <span class="gdrive-hero-sub">Hỗ trợ cả file bị chặn tải / chặn in</span>
+          <div class="context-card-top">
+            <span class="context-icon">📁</span>
+            <div class="context-info">
+              <span class="context-badge">GOOGLE DRIVE</span>
+              <span class="context-title" title="${currentTab.title || 'Google Drive File'}">${currentTab.title || 'Tài liệu Google Drive'}</span>
+            </div>
           </div>
-          <div class="gdrive-hero-title">${currentTab.title || 'Tài liệu Google Drive'}</div>
-          <div class="gdrive-hero-actions">
+          <div class="context-actions">
             ${driveInfo && driveInfo.directUrl ? `
-              <button id="btnGdriveHeroDirect" class="btn-download btn-gdrive-direct">
-                <span>⚡ Tải File Gốc (Direct)</span>
+              <button id="btnGdriveHeroDirect" class="btn-primary">
+                <span>⚡ Tải File Gốc</span>
               </button>
             ` : ''}
-            <button id="btnGdriveHeroBypass" class="btn-download btn-gdrive-bypass">
-              <span>🔓 Vượt Chặn Tải Full PDF</span>
+            <button id="btnGdriveHeroBypass" class="btn-secondary">
+              <span>🔓 Vượt Chặn Tải PDF</span>
             </button>
           </div>
         `;
@@ -569,8 +571,8 @@ document.addEventListener('DOMContentLoaded', async () => {
               url: driveInfo.directUrl,
               filename: `${(currentTab.title || 'GoogleDrive_File').replace(/[\\/:*?"<>|]/g, '_')}.pdf`
             }, (res) => {
-              btnDirect.innerHTML = (res && res.success) ? `<span>✓ Đã tải file gốc!</span>` : `<span>Lỗi tải</span>`;
-              setTimeout(() => { btnDirect.innerHTML = `<span>⚡ Tải File Gốc (Direct)</span>`; }, 2500);
+              btnDirect.innerHTML = (res && res.success) ? `<span>✓ Đã tải file!</span>` : `<span>Lỗi tải</span>`;
+              setTimeout(() => { btnDirect.innerHTML = `<span>⚡ Tải File Gốc</span>`; }, 2500);
             });
           });
         }
@@ -586,16 +588,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderedCount++;
       } else if (isCurrentPdf) {
         const directPdfCard = document.createElement('div');
-        directPdfCard.className = 'direct-pdf-hero-card';
+        directPdfCard.className = 'doc-context-card pdf';
         directPdfCard.innerHTML = `
-          <div class="gdrive-hero-header">
-            <span class="badge badge-doc">📄 TAB HIỆN TẠI LÀ FILE PDF</span>
-            <span class="gdrive-hero-sub">Phát hiện file PDF đang mở trên trình duyệt</span>
+          <div class="context-card-top">
+            <span class="context-icon">📄</span>
+            <div class="context-info">
+              <span class="context-badge">TÀI LIỆU PDF</span>
+              <span class="context-title" title="${currentTab.title || 'PDF Document'}">${currentTab.title || 'Tài liệu PDF'}</span>
+            </div>
           </div>
-          <div class="gdrive-hero-title">${currentTab.title || 'Tài liệu PDF'}</div>
-          <div class="gdrive-hero-actions">
-            <button id="btnDirectPdfDownload" class="btn-download">
-              <span>📥 Tải File PDF Này Về Máy</span>
+          <div class="context-actions">
+            <button id="btnDirectPdfDownload" class="btn-primary">
+              <span>📥 Tải File PDF Về Máy</span>
             </button>
           </div>
         `;
@@ -607,34 +611,52 @@ document.addEventListener('DOMContentLoaded', async () => {
             url: currentTab.url,
             filename: `${(currentTab.title || 'Tai_Lieu').replace(/[\\/:*?"<>|]/g, '_')}.pdf`
           }, (res) => {
-            btn.innerHTML = (res && res.success) ? `<span>✓ Đang tải PDF!</span>` : `<span>Lỗi tải</span>`;
-            setTimeout(() => { btn.innerHTML = `<span>📥 Tải File PDF Này Về Máy</span>`; }, 2500);
+            btn.innerHTML = (res && res.success) ? `<span>✓ Đã tải!</span>` : `<span>Lỗi tải</span>`;
+            setTimeout(() => { btn.innerHTML = `<span>📥 Tải File PDF Về Máy</span>`; }, 2500);
           });
         });
         mediaContainer.appendChild(directPdfCard);
         renderedCount++;
       }
 
-      // B. Khung dán Link / Tải VIP Document
-      const vipInputSection = document.createElement('div');
-      vipInputSection.className = 'doc-vip-box';
-      vipInputSection.innerHTML = `
-        <div class="vip-box-header">
-          <span class="badge badge-doc">⚡ CỔNG TẢI TÀI LIỆU VIP</span>
-          <span class="vip-subtext">Google Drive • Scribd • Studocu • SlideShare • Issuu</span>
-        </div>
-        <div class="vip-input-row">
-          <input type="text" id="inputVipUrl" class="vip-input" placeholder="Dán link Google Drive / Scribd / Studocu vào đây...">
-          <button id="btnVipResolve" class="btn-download btn-vip-go"><span>Tải Full VIP</span></button>
-        </div>
+      // B. Thanh công cụ tiện ích xử lý trang tinh gọn (Quick Tools)
+      const quickTools = document.createElement('div');
+      quickTools.className = 'doc-quick-tools';
+      quickTools.innerHTML = `
+        <button id="btnUnblurDoc" class="tool-chip" title="Gỡ bỏ lớp mờ, mở khóa bài đọc bị che">
+          <span>🔓 Mở mờ</span>
+        </button>
+        <button id="btnScanCanvas" class="tool-chip" title="Tự động cuộn nạp tất cả trang và xuất file PDF">
+          <span>📄 Gom PDF</span>
+        </button>
+        <button id="btnPrintDoc" class="tool-chip" title="Lưu giao diện trang qua hộp thoại In">
+          <span>🖨️ In trang</span>
+        </button>
+        <button id="btnToggleVip" class="tool-chip" title="Dán link từ Scribd, Studocu, Drive...">
+          <span>🔗 Link VIP</span>
+        </button>
       `;
 
-      const inputVipUrl = vipInputSection.querySelector('#inputVipUrl');
-      const btnVipResolve = vipInputSection.querySelector('#btnVipResolve');
+      // C. Hộp nhập link VIP (Ẩn/Hiện linh hoạt, không chiếm diện tích)
+      const vipBox = document.createElement('div');
+      vipBox.className = 'vip-input-box';
+      const isKnownVip = currentTab?.url && detectVipDocPlatform(currentTab.url);
+      vipBox.style.display = isKnownVip ? 'flex' : 'none';
+      vipBox.innerHTML = `
+        <input type="text" id="inputVipUrl" class="vip-input" placeholder="Dán link Drive / Scribd / Studocu...">
+        <button id="btnVipResolve" class="btn-vip-go">Tải VIP</button>
+      `;
 
-      if (currentTab && currentTab.url && detectVipDocPlatform(currentTab.url)) {
+      const inputVipUrl = vipBox.querySelector('#inputVipUrl');
+      const btnVipResolve = vipBox.querySelector('#btnVipResolve');
+      if (currentTab && currentTab.url && isKnownVip) {
         inputVipUrl.value = currentTab.url;
       }
+
+      quickTools.querySelector('#btnToggleVip').addEventListener('click', () => {
+        vipBox.style.display = vipBox.style.display === 'none' ? 'flex' : 'none';
+        if (vipBox.style.display === 'flex') inputVipUrl.focus();
+      });
 
       btnVipResolve.addEventListener('click', async () => {
         const targetUrl = (inputVipUrl.value || currentTab?.url || '').trim();
@@ -645,7 +667,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const oldBtnText = btnVipResolve.innerHTML;
         btnVipResolve.disabled = true;
-        btnVipResolve.innerHTML = `<span>⏳ Đang giải mã ngầm...</span>`;
+        btnVipResolve.innerHTML = `⏳`;
 
         chrome.runtime.sendMessage({
           action: 'RESOLVE_VIP_DOC',
@@ -653,66 +675,34 @@ document.addEventListener('DOMContentLoaded', async () => {
           tabId: currentTab ? currentTab.id : null
         }, async (res) => {
           if (res && res.success && res.downloadId) {
-            btnVipResolve.innerHTML = `<span>✓ Đang tải file gốc!</span>`;
+            btnVipResolve.innerHTML = `✓`;
             setTimeout(() => {
               btnVipResolve.disabled = false;
               btnVipResolve.innerHTML = oldBtnText;
             }, 3000);
           } else {
-            // Nếu giải mã server cần fallback, tự động quét trích xuất DOM trực tiếp tại chỗ
-            btnVipResolve.innerHTML = `<span>⏳ Đang quét trang & gom PDF...</span>`;
+            btnVipResolve.innerHTML = `⏳`;
             await triggerExportPdf(btnVipResolve);
             btnVipResolve.disabled = false;
+            btnVipResolve.innerHTML = oldBtnText;
           }
         });
       });
 
-      mediaContainer.appendChild(vipInputSection);
-
-      // B. Thanh công cụ xử lý trên trang hiện tại
-      const docToolbar = document.createElement('div');
-      docToolbar.className = 'doc-toolbar';
-      docToolbar.innerHTML = `
-        <button id="btnAreaScanPdf" class="tool-btn highlight" title="Quét vùng và cuộn trang xuống dưới để xuất PDF chia trang chuẩn, không bị cắt ngang dòng chữ">
-          <span>🎯 Quét Vùng Ra PDF</span>
-        </button>
-        <button id="btnUnblurDoc" class="tool-btn" title="Xóa bỏ lớp mờ, gỡ bỏ thông báo chặn nạp tài liệu">
-          <span>🔓 Mở Mờ & Tải Full</span>
-        </button>
-        <button id="btnScanCanvas" class="tool-btn" title="Tự động cuộn nạp & gom toàn bộ trang thành 1 file PDF chuẩn">
-          <span>📄 Xuất File PDF</span>
-        </button>
-        <button id="btnPrintDoc" class="tool-btn" title="Lưu toàn bộ giao diện trang web thành tài liệu PDF">
-          <span>🖨️ Lưu Trang Web</span>
-        </button>
-      `;
-
-      // Nút Quét vùng xuất PDF
-      const btnAreaScanPdf = docToolbar.querySelector('#btnAreaScanPdf');
-      if (btnAreaScanPdf) {
-        btnAreaScanPdf.addEventListener('click', triggerRegionScan);
-      }
-
-      // Nút Mở mờ & Tải Full
-      docToolbar.querySelector('#btnUnblurDoc').addEventListener('click', async (e) => {
+      // Mở mờ & Tải Full
+      quickTools.querySelector('#btnUnblurDoc').addEventListener('click', async (e) => {
         const btn = e.currentTarget;
         const oldText = btn.innerHTML;
-        btn.innerHTML = `<span>⏳ Đang gỡ bỏ che mờ...</span>`;
+        btn.innerHTML = `<span>⏳ Đang gỡ...</span>`;
         try {
           await chrome.scripting.executeScript({
             target: { tabId: currentTab.id },
             func: () => {
               document.querySelectorAll('*').forEach(el => {
                 const s = window.getComputedStyle(el);
-                if (s.filter && s.filter.includes('blur')) {
-                  el.style.setProperty('filter', 'none', 'important');
-                }
-                if (s.userSelect === 'none') {
-                  el.style.setProperty('user-select', 'text', 'important');
-                }
-                if (s.pointerEvents === 'none') {
-                  el.style.setProperty('pointer-events', 'auto', 'important');
-                }
+                if (s.filter && s.filter.includes('blur')) el.style.setProperty('filter', 'none', 'important');
+                if (s.userSelect === 'none') el.style.setProperty('user-select', 'text', 'important');
+                if (s.pointerEvents === 'none') el.style.setProperty('pointer-events', 'auto', 'important');
               });
               document.querySelectorAll('[class*="paywall"], [class*="overlay"], [class*="modal-backdrop"], [class*="blur-overlay"], [id*="paywall"]').forEach(p => {
                 p.style.setProperty('display', 'none', 'important');
@@ -721,24 +711,24 @@ document.addEventListener('DOMContentLoaded', async () => {
               document.documentElement.style.setProperty('overflow', 'auto', 'important');
             }
           });
-          btn.innerHTML = `<span>✓ Đã mở mờ!</span>`;
+          btn.innerHTML = `<span>✓ Đã gỡ!</span>`;
           setTimeout(() => {
             btn.innerHTML = oldText;
-            triggerExportPdf(docToolbar.querySelector('#btnScanCanvas'));
+            triggerExportPdf(quickTools.querySelector('#btnScanCanvas'));
           }, 800);
         } catch (err) {
-          btn.innerHTML = `<span>Lỗi mở mờ</span>`;
+          btn.innerHTML = `<span>Lỗi</span>`;
           setTimeout(() => { btn.innerHTML = oldText; }, 2000);
         }
       });
 
-      // Nút Xuất PDF Canvas
-      docToolbar.querySelector('#btnScanCanvas').addEventListener('click', (e) => {
+      // Gom trang PDF
+      quickTools.querySelector('#btnScanCanvas').addEventListener('click', (e) => {
         triggerExportPdf(e.currentTarget);
       });
 
-      // Nút In / Lưu trang web thành PDF
-      docToolbar.querySelector('#btnPrintDoc').addEventListener('click', async () => {
+      // In trang
+      quickTools.querySelector('#btnPrintDoc').addEventListener('click', async () => {
         try {
           await chrome.scripting.executeScript({
             target: { tabId: currentTab.id },
@@ -747,7 +737,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (e) {}
       });
 
-      mediaContainer.appendChild(docToolbar);
+      mediaContainer.appendChild(quickTools);
+      mediaContainer.appendChild(vipBox);
       renderedCount++;
     }
 

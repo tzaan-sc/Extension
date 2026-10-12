@@ -15,7 +15,7 @@
     <header class="header">
       <div class="brand">
         <div class="logo-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -23,22 +23,23 @@
         </div>
         <div class="brand-text">
           <h1>OmniLoader</h1>
-          <span class="version-tag">All-In-One Downloader</span>
+          <span class="version-tag">Media & Doc Downloader</span>
         </div>
       </div>
 
       <div class="header-actions">
-        <button id="btnHeaderRegionScan" class="icon-btn" title="Quét vùng xuất PDF chống cắt dòng">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button id="btnHeaderRegionScan" class="action-pill-btn" title="Kéo chuột quét vùng bài viết để xuất PDF chuẩn A4, chống cắt dòng">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <path d="M4 7V4h3"></path>
             <path d="M20 7V4h-3"></path>
             <path d="M4 17v3h3"></path>
             <path d="M20 17v3h-3"></path>
             <rect x="8" y="8" width="8" height="8" rx="1"></rect>
           </svg>
+          <span>Quét vùng</span>
         </button>
-        <button id="btnRefresh" class="icon-btn" title="Quét lại trang">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button id="btnRefresh" class="icon-btn" title="Quét lại nội dung trên trang">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="23 4 23 10 17 10"></polyline>
             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
           </svg>
@@ -48,32 +49,20 @@
 
     <!-- Page Info Badge -->
     <div class="page-meta">
-      <span class="meta-label">Trang:</span>
+      <span class="status-dot"></span>
       <span id="pageTitle" class="meta-title" title="...">Đang nạp...</span>
     </div>
 
-    <!-- Quick Scan Button -->
-    <button id="btnQuickAreaScan" class="btn-quick-scan" title="Kéo chuột quét vùng bài viết/tài liệu để xuất PDF chuẩn A4, chống cắt dòng chữ">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <path d="M4 7V4h3"></path>
-        <path d="M20 7V4h-3"></path>
-        <path d="M4 17v3h3"></path>
-        <path d="M20 17v3h-3"></path>
-        <rect x="8" y="8" width="8" height="8" rx="1"></rect>
-      </svg>
-      <span>🎯 Quét Vùng Xuất PDF Chuẩn A4</span>
-    </button>
-
-    <!-- Filter Tabs (Tách biệt hoàn toàn từng chuyên mục) -->
+    <!-- Filter Tabs -->
     <nav class="filter-tabs">
       <button class="tab-btn active" data-category="all">
         Tất cả <span id="countAll" class="tab-count">0</span>
       </button>
-      <button class="tab-btn" data-category="audio">
-        🎵 Âm thanh <span id="countAudio" class="tab-count">0</span>
-      </button>
       <button class="tab-btn" data-category="video">
         🎬 Video <span id="countVideo" class="tab-count">0</span>
+      </button>
+      <button class="tab-btn" data-category="audio">
+        🎵 Audio <span id="countAudio" class="tab-count">0</span>
       </button>
       <button class="tab-btn" data-category="document">
         📚 Tài liệu <span id="countDoc" class="tab-count">0</span>
@@ -84,14 +73,14 @@
     <main class="media-container" id="mediaContainer">
       <div class="empty-state" id="emptyState">
         <div class="empty-icon">
-          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <circle cx="12" cy="12" r="10"></circle>
             <line x1="12" y1="8" x2="12" y2="12"></line>
             <line x1="12" y1="16" x2="12.01" y2="16"></line>
           </svg>
         </div>
-        <h3>Chưa tìm thấy mục nào</h3>
-        <p>Bấm phát âm thanh / video hoặc cuộn trang để bắt link tự động.</p>
+        <h3>Không tìm thấy tệp phù hợp</h3>
+        <p>Bấm phát video/audio hoặc cuộn trang để bắt link tự động.</p>
       </div>
     </main>
   </div>
