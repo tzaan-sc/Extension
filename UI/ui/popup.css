@@ -159,22 +159,25 @@ body {
 
 .code-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   background: rgba(11, 15, 25, 0.6);
-  padding: 3px;
-  border-radius: 6px;
+  padding: 4px;
+  border-radius: 8px;
 }
 
 .code-tab {
-  flex: 1;
+  flex: 1 1 calc(33.333% - 4px);
   background: transparent;
   border: none;
   color: var(--text-secondary);
   font-size: 10px;
   font-weight: 600;
-  padding: 4px;
-  border-radius: 4px;
+  padding: 5px 4px;
+  border-radius: 5px;
   cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .code-tab.active {
@@ -184,7 +187,7 @@ body {
 
 textarea {
   width: 100%;
-  height: 200px;
+  height: 180px;
   background: #090d16;
   color: #38bdf8;
   border: 1px solid rgba(255, 255, 255, 0.05);
@@ -199,19 +202,22 @@ textarea {
 
 .code-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .btn-action {
   flex: 1;
+  min-width: 110px;
   background: rgba(16, 185, 129, 0.2);
   border: 1px solid rgba(16, 185, 129, 0.4);
   color: #34d399;
-  padding: 6px 10px;
+  padding: 7px 10px;
   border-radius: 6px;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
+  text-align: center;
   transition: all 0.2s;
 }
 

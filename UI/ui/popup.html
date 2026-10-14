@@ -24,7 +24,7 @@
         </div>
         <div class="brand-text">
           <h1>OmniUI</h1>
-          <span class="version-tag">Inspector & Figma</span>
+          <span class="version-tag">Web to Figma & Code</span>
         </div>
       </div>
     </header>
@@ -35,7 +35,7 @@
         🎯 Soi Phần Tử
       </button>
       <button class="tab-btn" data-tab="theme">
-        🎨 Màu & Font
+        🎨 Bảng Màu & Font
       </button>
       <button class="tab-btn" data-tab="export">
         📦 Xuất Toàn Trang
@@ -56,16 +56,24 @@
       </button>
 
       <div class="code-viewer-card" id="codeViewerCard">
+        <!-- Sub Format Selector -->
         <div class="code-tabs">
           <button class="code-tab active" data-type="figma">🎨 Figma JSON</button>
-          <button class="code-tab" data-type="css">💻 CSS</button>
-          <button class="code-tab" data-type="html">🌐 HTML</button>
+          <button class="code-tab" data-type="svg">⚡ Figma SVG</button>
+          <button class="code-tab" data-type="tailwind">🌊 Tailwind</button>
           <button class="code-tab" data-type="react">⚛️ React</button>
+          <button class="code-tab" data-type="vue">💚 Vue</button>
+          <button class="code-tab" data-type="scoped">💻 CSS+HTML</button>
         </div>
-        <textarea id="popupCodeArea" readonly placeholder="Bấm 'Bắt Đầu Soi' ở trên rồi click vào bất kỳ nút, bảng hoặc thẻ nào trên web để lấy code ngay..."></textarea>
+
+        <textarea id="popupCodeArea" readonly placeholder="Bấm 'Bắt Đầu Soi' ở trên rồi click vào bất kỳ nút, bảng hoặc thẻ nào trên web để trích xuất Figma hoặc Code ngay..."></textarea>
+
         <div class="code-actions">
           <button id="btnCopyCode" class="btn-action">
             <span>📋 Copy Code</span>
+          </button>
+          <button id="btnCopyFigmaSvg" class="btn-action" style="background: linear-gradient(135deg, #06b6d4, #3b82f6);">
+            <span>⚡ Copy cho Figma (Ctrl+V)</span>
           </button>
           <button id="btnDownloadCode" class="btn-action secondary">
             <span>💾 Tải File</span>

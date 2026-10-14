@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const codeTabs = document.querySelectorAll('.code-tab');
   const codeArea = document.getElementById('popupCodeArea');
   const btnCopyCode = document.getElementById('btnCopyCode');
+  const btnCopyFigmaSvg = document.getElementById('btnCopyFigmaSvg');
   const btnDownloadCode = document.getElementById('btnDownloadCode');
   const colorGrid = document.getElementById('colorGrid');
   const fontList = document.getElementById('fontList');
@@ -67,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 4. Chuyển đổi định dạng Code (Figma, CSS, HTML, React)
+  // 4. Chuyển đổi định dạng Code
   codeTabs.forEach(tab => {
     tab.addEventListener('click', () => {
       codeTabs.forEach(t => t.classList.remove('active'));
@@ -81,13 +82,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!currentElementData) return;
 
     if (activeCodeType === 'figma') {
-      codeArea.value = JSON.stringify(currentElementData.figmaJson, null, 2);
-    } else if (activeCodeType === 'css') {
-      codeArea.value = currentElementData.css || '';
-    } else if (activeCodeType === 'html') {
-      codeArea.value = currentElementData.cleanHtml || currentElementData.html || '';
+      codeArea.value = JSON.stringify(currentElementData.figmaNode || currentElementData.figmaJson, null, 2);
+    } else if (activeCodeType === 'svg') {
+      codeArea.value = currentElementData.svgCode || '';
+    } else if (activeCodeType === 'tailwind') {
+      codeArea.value = currentElementData.tailwindHtml || '';
     } else if (activeCodeType === 'react') {
       codeArea.value = currentElementData.reactJsx || '';
+    } else if (activeCodeType === 'vue') {
+      codeArea.value = currentElementData.vueSfc || '';
+    } else if (activeCodeType === 'scoped') {
+      codeArea.value = currentElementData.scopedCssHtml || currentElementData.css || '';
     }
   }
 
@@ -95,15 +100,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnCopyCode.addEventListener('click', () => {
     if (!codeArea.value) return;
     navigator.clipboard.writeText(codeArea.value);
-    const oldText = btnCopyCode.innerHTML;
+    const oldHtml = btnCopyCode.innerHTML;
     btnCopyCode.innerHTML = '<span>✓ Đã sao chép!</span>';
-    setTimeout(() => { btnCopyCode.innerHTML = oldText; }, 1500);
+    setTimeout(() => { btnCopyCode.innerHTML = oldHtml; }, 1500);
   });
 
-  // 6. Nút Tải file code
+  // 6. Nút Copy trực tiếp Figma SVG (Ctrl+V)
+  if (btnCopyFigmaSvg) {
+    btnCopyFigmaSvg.addEventListener('click', () => {
+      const svg = currentElementData?.svgCode;
+      if (!svg) {
+        alert('Vui lòng bấm "Bắt Đầu Soi" để chọn một phần tử trước!');
+        return;
+      }
+      navigator.clipboard.writeText(svg);
+      const oldHtml = btnCopyFigmaSvg.innerHTML;
+      btnCopyFigmaSvg.innerHTML = '<span>✓ Đã copy SVG! Vào Figma bấm Ctrl+V</span>';
+      setTimeout(() => { btnCopyFigmaSvg.innerHTML = oldHtml; }, 2000);
+    });
+  }
+
+  // 7. Nút Tải file code
   btnDownloadCode.addEventListener('click', () => {
     if (!codeArea.value) return;
-    const exts = { figma: 'json', css: 'css', html: 'html', react: 'jsx' };
+    const exts = { figma: 'json', svg: 'svg', tailwind: 'html', react: 'jsx', vue: 'vue', scoped: 'html' };
     const ext = exts[activeCodeType] || 'txt';
     const blob = new Blob([codeArea.value], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -114,7 +134,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     URL.revokeObjectURL(url);
   });
 
-  // 7. Quét Bảng màu & Typography toàn trang (Tab 2)
+  // 8. Quét Bảng màu & Typography toàn trang (Tab 2)
   function loadPageTheme() {
     if (!currentTab) return;
     chrome.tabs.sendMessage(currentTab.id, { action: 'GET_PAGE_THEME' }, (res) => {
@@ -156,7 +176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 8. Xuất Toàn Bộ Trang Sang Figma JSON (Tab 3)
+  // 9. Xuất Toàn Bộ Trang Sang Figma JSON (Tab 3)
   btnExportFigma.addEventListener('click', () => {
     if (!currentTab) return;
     const oldText = btnExportFigma.innerHTML;
@@ -183,7 +203,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // 9. Tải trọn bộ HTML của trang (Tab 3)
+  // 10. Tải trọn bộ HTML của trang (Tab 3)
   btnExportHtml.addEventListener('click', async () => {
     if (!currentTab) return;
     try {
