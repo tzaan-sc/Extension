@@ -1,21 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#3b82f6" />
-      <stop offset="50%" stop-color="#8b5cf6" />
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e1b4b" />
+    </linearGradient>
+
+    <!-- Google Lens Inspired Glowing Gradient -->
+    <linearGradient id="lensGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="35%" stop-color="#6366f1" />
+      <stop offset="70%" stop-color="#a855f7" />
       <stop offset="100%" stop-color="#ec4899" />
     </linearGradient>
+
+    <linearGradient id="innerGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#a855f7" stop-opacity="0.05" />
+    </linearGradient>
+
+    <!-- Shadow filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#6366f1" flood-opacity="0.45" />
+    </filter>
   </defs>
-  <rect width="128" height="128" rx="28" fill="#0f172a" />
-  <!-- Corner Lens Markers -->
-  <path d="M28 44 V32 H44" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-  <path d="M100 44 V32 H84" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-  <path d="M28 84 V96 H44" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-  <path d="M100 84 V96 H84" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-  <!-- Central Scan Circle -->
-  <circle cx="64" cy="64" r="22" stroke="url(#grad)" stroke-width="5" fill="rgba(56, 189, 248, 0.15)" />
-  <!-- Text 'T' inside -->
-  <text x="64" y="73" font-family="Segoe UI, sans-serif" font-size="26" font-weight="bold" fill="#38bdf8" text-anchor="middle">T</text>
-  <!-- Sparkle dot -->
-  <circle cx="88" cy="40" r="5" fill="#f43f5e" />
+
+  <!-- Base Rounded Container with subtle border -->
+  <rect width="128" height="128" rx="28" fill="url(#bgGrad)" />
+  <rect x="1" y="1" width="126" height="126" rx="27" stroke="rgba(255,255,255,0.08)" stroke-width="2" fill="none" />
+
+  <!-- Outer Viewfinder / Bracket Focus Corners (Google Lens Style) -->
+  <g stroke="url(#lensGrad)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Top-Left -->
+    <path d="M24 46 V30 C24 26 26 24 30 24 H46" />
+    <!-- Top-Right -->
+    <path d="M104 46 V30 C104 26 102 24 98 24 H82" />
+    <!-- Bottom-Left -->
+    <path d="M24 82 V98 C24 102 26 104 30 104 H46" />
+    <!-- Bottom-Right -->
+    <path d="M104 82 V98 C104 102 102 104 98 104 H82" />
+  </g>
+
+  <!-- Central Camera Lens Aperture & Scanning Circle -->
+  <circle cx="64" cy="64" r="26" fill="url(#innerGlow)" stroke="url(#lensGrad)" stroke-width="4.5" filter="url(#glow)" />
+
+  <!-- Scanning laser horizontal beam -->
+  <line x1="38" y1="64" x2="90" y2="64" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" opacity="0.8" />
+  <circle cx="64" cy="64" r="2.5" fill="#ffffff" />
+
+  <!-- Text / Character glyph 'A' inside scanner -->
+  <path d="M57 74 L64 53 L71 74 M59 69 H69" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- AI Sparkle indicator at top-right corner -->
+  <path d="M96 28 C96 28 97.5 32 101 33 C97.5 34 96 38 96 38 C96 38 94.5 34 91 33 C94.5 32 96 28 96 28 Z" fill="#38bdf8" />
 </svg>

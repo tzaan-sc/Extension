@@ -11,27 +11,47 @@
     <!-- Header -->
     <header class="popup-header">
       <div class="brand">
-        <svg class="brand-icon" width="24" height="24" viewBox="0 0 128 128" fill="none">
+        <svg class="brand-icon" width="28" height="28" viewBox="0 0 128 128" fill="none">
+          <defs>
+            <linearGradient id="pGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#38bdf8" />
+              <stop offset="50%" stop-color="#818cf8" />
+              <stop offset="100%" stop-color="#ec4899" />
+            </linearGradient>
+          </defs>
           <rect width="128" height="128" rx="28" fill="#0f172a" />
-          <path d="M28 44 V32 H44" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
-          <path d="M100 44 V32 H84" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
-          <path d="M28 84 V96 H44" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
-          <path d="M100 84 V96 H84" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
-          <circle cx="64" cy="64" r="22" stroke="#38bdf8" stroke-width="7" fill="none" />
+          <g stroke="url(#pGrad)" stroke-width="8" stroke-linecap="round">
+            <path d="M24 44 V28 H40" />
+            <path d="M104 44 V28 H88" />
+            <path d="M24 84 V100 H40" />
+            <path d="M104 84 V100 H88" />
+          </g>
+          <circle cx="64" cy="64" r="24" stroke="url(#pGrad)" stroke-width="5" fill="rgba(56, 189, 248, 0.12)" />
+          <line x1="42" y1="64" x2="86" y2="64" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" />
+          <circle cx="64" cy="64" r="3" fill="#ffffff" />
         </svg>
         <div>
           <h1 class="brand-title">Lens OCR</h1>
           <span class="brand-subtitle">Quét chữ kiểu Google Lens</span>
         </div>
       </div>
-      <button id="btn-toggle-settings" class="icon-btn" title="Cài đặt OCR & API">⚙️</button>
+      <button id="btn-toggle-settings" class="icon-btn" title="Cài đặt OCR & API">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
     </header>
 
     <!-- Main Action Panel -->
     <main class="popup-main">
       <div class="action-card">
         <button id="btn-snip-capture" class="btn-primary">
-          <span class="btn-icon">🎯</span>
+          <div class="btn-icon-wrapper">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </div>
           <div class="btn-text-wrap">
             <span class="btn-main-title">Khoanh vùng quét chữ</span>
             <span class="btn-sub-title">Chụp vùng bất kỳ trên trang web hiện tại</span>
@@ -42,14 +62,26 @@
       <!-- Dropzone: Kéo thả hoặc dán ảnh -->
       <div id="drop-zone" class="drop-zone">
         <input type="file" id="file-input" accept="image/*" style="display: none;">
-        <div class="drop-zone-icon">🖼️</div>
+        <div class="drop-zone-icon">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="3" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21 15 16 10 5 21" />
+          </svg>
+        </div>
         <div class="drop-zone-title">Dán (Ctrl + V) hoặc thả ảnh vào đây</div>
-        <div class="drop-zone-desc">Hoặc bấm vào để chọn ảnh từ máy tính</div>
+        <div class="drop-zone-desc">Hoặc nhấp vào để tải ảnh từ máy tính</div>
       </div>
 
       <!-- Settings Panel (Collapsible) -->
       <div id="settings-panel" class="settings-panel" style="display: none;">
-        <h3 class="settings-title">⚙️ Cấu hình OCR</h3>
+        <div class="settings-title-row">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          <h3 class="settings-title">Cấu hình bộ nhận diện</h3>
+        </div>
         
         <div class="form-group">
           <label for="select-engine">Bộ nhận diện (OCR Engine):</label>
@@ -87,14 +119,28 @@
           <input type="password" id="input-ocrspace-key" class="form-input" placeholder="Nhập OCR.Space API Key (K8xxxxxxxx)">
         </div>
 
-        <button id="btn-save-settings" class="btn-secondary">💾 Lưu cấu hình</button>
+        <button id="btn-save-settings" class="btn-secondary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+          </svg>
+          <span>Lưu cấu hình</span>
+        </button>
         <span id="save-status" class="save-status"></span>
       </div>
     </main>
 
     <!-- Footer tips -->
     <footer class="popup-footer">
-      <span>💡 Mẹo: Nhấp chuột phải vào bất kỳ hình ảnh nào và chọn <b>"Quét chữ từ hình ảnh này"</b></span>
+      <div class="footer-tip">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="16" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12.01" y2="8" />
+        </svg>
+        <span>Mẹo: Nhấp chuột phải vào bất kỳ hình ảnh nào và chọn <b>"Quét chữ từ hình ảnh này"</b></span>
+      </div>
     </footer>
   </div>
 

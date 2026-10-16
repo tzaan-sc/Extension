@@ -67,7 +67,16 @@
       this.root.innerHTML = `
         <div class="lens-snipping-overlay">
           <div class="lens-top-banner">
-            <span class="lens-badge">🎯 GOOGLE LENS OCR</span>
+            <span class="lens-badge">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="22" y1="12" x2="18" y2="12" />
+                <line x1="6" y1="12" x2="2" y2="12" />
+                <line x1="12" y1="6" x2="12" y2="2" />
+                <line x1="12" y1="22" x2="12" y2="18" />
+              </svg>
+              <span>LENS OCR</span>
+            </span>
             <span>Kéo chuột khoanh vùng văn bản cần quét (Nhấn <b>ESC</b> để hủy)</span>
           </div>
           <div class="lens-snip-selection-box" style="display: none;">
@@ -212,22 +221,50 @@
           <!-- Top Header -->
           <div class="lens-header">
             <div class="lens-logo">
-              <svg width="22" height="22" viewBox="0 0 128 128" fill="none">
-                <rect width="128" height="128" rx="28" fill="#0f172a" />
-                <path d="M28 44 V32 H44" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
-                <path d="M100 44 V32 H84" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
-                <path d="M28 84 V96 H44" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
-                <path d="M100 84 V96 H84" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
-                <circle cx="64" cy="64" r="22" stroke="#38bdf8" stroke-width="7" fill="none" />
+              <svg width="24" height="24" viewBox="0 0 128 128" fill="none">
+                <defs>
+                  <linearGradient id="studioGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#38bdf8" />
+                    <stop offset="50%" stop-color="#818cf8" />
+                    <stop offset="100%" stop-color="#ec4899" />
+                  </linearGradient>
+                </defs>
+                <rect width="128" height="128" rx="28" fill="#0b1120" />
+                <g stroke="url(#studioGrad)" stroke-width="8" stroke-linecap="round">
+                  <path d="M24 44 V28 H40" />
+                  <path d="M104 44 V28 H88" />
+                  <path d="M24 84 V100 H40" />
+                  <path d="M104 84 V100 H88" />
+                </g>
+                <circle cx="64" cy="64" r="24" stroke="url(#studioGrad)" stroke-width="5" fill="rgba(56, 189, 248, 0.12)" />
+                <line x1="42" y1="64" x2="86" y2="64" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" />
               </svg>
               <span>Lens OCR Studio</span>
               <span id="lens-engine-tag" style="font-size: 11px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 2px 8px; border-radius: 10px; border: 1px solid rgba(56, 189, 248, 0.3);">Đang quét...</span>
             </div>
             <div class="lens-header-actions">
-              <button id="lens-btn-resnip" class="lens-btn-sm" title="Quét lại vùng khác">✂️ Quét vùng khác</button>
-              <button id="lens-btn-upload" class="lens-btn-sm" title="Tải ảnh khác lên">📁 Tải ảnh khác</button>
+              <button id="lens-btn-resnip" class="lens-btn-sm" title="Quét lại vùng khác">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+                <span>Quét vùng khác</span>
+              </button>
+              <button id="lens-btn-upload" class="lens-btn-sm" title="Tải ảnh khác lên">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+                <span>Tải ảnh khác</span>
+              </button>
               <input type="file" id="lens-file-input" accept="image/*" style="display: none;" />
-              <button id="lens-btn-close-studio" class="lens-btn-sm lens-btn-close" title="Đóng giao diện">✕ Đóng</button>
+              <button id="lens-btn-close-studio" class="lens-btn-sm lens-btn-close" title="Đóng giao diện">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+                <span>Đóng</span>
+              </button>
             </div>
           </div>
 
@@ -241,10 +278,35 @@
 
                 <!-- Floating Toolbar when user selects words -->
                 <div class="lens-floating-toolbar" id="lens-floating-toolbar" style="display: none;">
-                  <button class="lens-floating-btn" id="lens-float-copy">📋 Copy</button>
-                  <button class="lens-floating-btn" id="lens-float-search">🔍 Tìm Google</button>
-                  <button class="lens-floating-btn" id="lens-float-translate">🌐 Dịch</button>
-                  <button class="lens-floating-btn" id="lens-float-speak">🔊 Nghe</button>
+                  <button class="lens-floating-btn" id="lens-float-copy">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span>Copy</span>
+                  </button>
+                  <button class="lens-floating-btn" id="lens-float-search">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="11" cy="11" r="8" />
+                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <span>Tìm Google</span>
+                  </button>
+                  <button class="lens-floating-btn" id="lens-float-translate">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="2" y1="12" x2="22" y2="12" />
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                    </svg>
+                    <span>Dịch</span>
+                  </button>
+                  <button class="lens-floating-btn" id="lens-float-speak">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    </svg>
+                    <span>Nghe</span>
+                  </button>
                 </div>
 
                 <!-- Loading overlay -->
@@ -262,7 +324,13 @@
             <div class="lens-sidebar">
               <div class="lens-sidebar-header">
                 <div class="lens-sidebar-title">
-                  <span>📝</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                    <polyline points="10 9 9 9 8 9" />
+                  </svg>
                   <span>Văn bản trích xuất</span>
                 </div>
                 <span id="lens-word-count" style="font-size: 11px; color: #94a3b8;">0 từ</span>
@@ -275,16 +343,33 @@
 
                 <div class="lens-actions-grid">
                   <button class="lens-action-btn primary" id="lens-btn-copy-all">
-                    <span>📋 Sao chép tất cả</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                    <span>Sao chép tất cả</span>
                   </button>
                   <button class="lens-action-btn" id="lens-btn-translate">
-                    <span>🌐 Dịch Tiếng Việt</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="2" y1="12" x2="22" y2="12" />
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                    </svg>
+                    <span>Dịch Tiếng Việt</span>
                   </button>
                   <button class="lens-action-btn" id="lens-btn-speak">
-                    <span>🔊 Nghe đọc</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    </svg>
+                    <span>Nghe đọc</span>
                   </button>
                   <button class="lens-action-btn" id="lens-btn-search-google">
-                    <span>🔍 Tìm Google</span>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="11" cy="11" r="8" />
+                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <span>Tìm Google</span>
                   </button>
                 </div>
               </div>

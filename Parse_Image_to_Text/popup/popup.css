@@ -1,10 +1,12 @@
 /* Popup UI Stylesheet - Premium Dark Futuristic Google Lens Aesthetics */
 :root {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-card: rgba(30, 41, 59, 0.7);
+  --bg-primary: #0b1120;
+  --bg-secondary: #131c31;
+  --bg-card: rgba(26, 38, 66, 0.7);
   --accent-cyan: #38bdf8;
   --accent-blue: #3b82f6;
+  --accent-purple: #8b5cf6;
+  --accent-pink: #ec4899;
   --accent-green: #10b981;
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
@@ -48,12 +50,18 @@ body {
   gap: 10px;
 }
 
+.brand-icon {
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 8px rgba(56, 189, 248, 0.3));
+}
+
 .brand-title {
   font-size: 16px;
   font-weight: 700;
-  background: linear-gradient(135deg, #38bdf8, #818cf8);
+  background: linear-gradient(135deg, #38bdf8, #818cf8, #ec4899);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  line-height: 1.2;
 }
 
 .brand-subtitle {
@@ -66,16 +74,20 @@ body {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  padding: 6px 8px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  font-size: 14px;
   color: var(--text-muted);
   transition: all 0.2s ease;
 }
 
 .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--text-main);
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: var(--accent-cyan);
 }
 
 /* Main */
@@ -95,25 +107,32 @@ body {
   align-items: center;
   gap: 14px;
   padding: 14px 16px;
-  background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #0284c7 0%, #4338ca 100%);
   border: 1px solid rgba(56, 189, 248, 0.4);
   border-radius: 12px;
   color: #fff;
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 8px 20px rgba(2, 132, 199, 0.3);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   text-align: left;
 }
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(37, 99, 235, 0.5);
+  box-shadow: 0 10px 25px rgba(56, 189, 248, 0.45);
   border-color: #38bdf8;
 }
 
-.btn-icon {
-  font-size: 24px;
+.btn-icon-wrapper {
+  width: 38px;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
 }
 
 .btn-text-wrap {
@@ -137,22 +156,25 @@ body {
 .drop-zone {
   border: 2px dashed rgba(56, 189, 248, 0.3);
   border-radius: 12px;
-  background: rgba(30, 41, 59, 0.4);
-  padding: 20px 14px;
+  background: rgba(19, 28, 49, 0.5);
+  padding: 22px 14px;
   text-align: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .drop-zone:hover, .drop-zone.dragover {
   border-color: var(--accent-cyan);
   background: rgba(56, 189, 248, 0.08);
-  box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.25);
 }
 
 .drop-zone-icon {
-  font-size: 26px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 2px 6px rgba(56, 189, 248, 0.4));
 }
 
 .drop-zone-title {
@@ -179,12 +201,18 @@ body {
   animation: fadeIn 0.2s ease-out;
 }
 
-.settings-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent-cyan);
+.settings-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   border-bottom: 1px solid var(--border-subtle);
   padding-bottom: 6px;
+}
+
+.settings-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent-cyan);
 }
 
 .form-group {
@@ -224,6 +252,10 @@ body {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   transition: all 0.2s;
 }
 
@@ -246,6 +278,17 @@ body {
   line-height: 1.4;
   border-top: 1px solid var(--border-subtle);
   padding-top: 10px;
+}
+
+.footer-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.footer-tip svg {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .popup-footer b {
