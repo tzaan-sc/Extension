@@ -26,9 +26,13 @@ class LensOCREngine {
 
     if (window.Tesseract) {
       const workerPath = chrome.runtime.getURL('libs/worker.min.js');
-      // Tạo worker với ngôn ngữ đã chọn
+      // Tạo worker với cấu hình tương thích Chrome Extension MV3
+      // workerBlobURL: false tránh lỗi Blob URL bị chặn CSP
       const worker = await window.Tesseract.createWorker(lang, 1, {
         workerPath: workerPath,
+        workerBlobURL: false,
+        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@v5.1.0/tesseract-core.wasm.js',
+        langPath: 'https://tessdata.projectnaptha.com/4.0.0',
         logger: (m) => {
           if (onProgress && m.status && m.progress !== undefined) {
             onProgress(m.status, m.progress);
@@ -176,9 +180,10 @@ class LensOCREngine {
     const mimeMatch = dataUrl.match(/data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+).*,.*/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
 
+    // Thử dùng gemini-1.5-flash hoặc gemini-2.0-flash
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-    const prompt = "Hãy đọc và trích xuất tất cả chữ/văn bản xuất hiện trong bức ảnh này, giữ nguyên định dạng, bố cục và ngôn ngữ. Chỉ trả về nội dung văn bản trích xuất được mà không giải thích hay thêm lời dẫn.";
+    const prompt = "Hãy đọc và trích xuất tất cả chữ/văn bản xuất hiện trong bức ảnh này, giữ nguyên thứ tự dòng và nội dung đầy đủ. Chỉ trả về nội dung văn bản mà không thêm bất kỳ lời dẫn giải thích nào.";
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -202,7 +207,7 @@ class LensOCREngine {
 
     const json = await response.json();
     if (json.error) {
-      throw new Error(`Gemini API Error: ${json.error.message}`);
+      throw new Error(`Gemini API Error: ${json.error.message || JSON.stringify(json.error)}`);
     }
 
     const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';

@@ -20,11 +20,36 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "lens_ocr_capture_area") {
     triggerSnipping(tab.id);
   } else if (info.menuItemId === "lens_ocr_image_target" && info.srcUrl) {
-    await injectScriptsIfNeeded(tab.id);
-    chrome.tabs.sendMessage(tab.id, {
-      action: "SCAN_DIRECT_IMAGE_URL",
-      imageUrl: info.srcUrl
-    });
+    try {
+      await injectScriptsIfNeeded(tab.id);
+      
+      // Nếu là data url thì gửi trực tiếp
+      if (info.srcUrl.startsWith('data:')) {
+        chrome.tabs.sendMessage(tab.id, {
+          action: "SCAN_DIRECT_IMAGE_URL",
+          imageUrl: info.srcUrl
+        });
+        return;
+      }
+
+      // Tải ảnh qua Service Worker (Background) để không bị chặn bởi CORS của trang web
+      const res = await fetch(info.srcUrl);
+      const blob = await res.blob();
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        chrome.tabs.sendMessage(tab.id, {
+          action: "SCAN_DIRECT_IMAGE_URL",
+          imageUrl: reader.result
+        });
+      };
+      reader.readAsDataURL(blob);
+    } catch (err) {
+      console.warn("Không tải được ảnh trực tiếp qua background, chuyển URL cho content script:", err);
+      chrome.tabs.sendMessage(tab.id, {
+        action: "SCAN_DIRECT_IMAGE_URL",
+        imageUrl: info.srcUrl
+      });
+    }
   }
 });
 

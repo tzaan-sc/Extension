@@ -635,15 +635,18 @@
   // Khởi tạo instance toàn cục
   window.__lensOverlayControllerInstance = new LensOverlayController();
 
-  // Nhận lệnh từ background / popup
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'START_SNIPPING_CAPTURE') {
-      window.__lensOverlayControllerInstance.startSnipping();
-      sendResponse({ status: 'snipping_started' });
-    } else if (request.action === 'SCAN_DIRECT_IMAGE_URL' && request.imageUrl) {
-      window.__lensOverlayControllerInstance.openLensStudio(request.imageUrl);
-      sendResponse({ status: 'studio_opened' });
-    }
-  });
+  // Nhận lệnh từ background / popup (chỉ đăng ký 1 lần)
+  if (!window.__lensMessageListenerBound) {
+    window.__lensMessageListenerBound = true;
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.action === 'START_SNIPPING_CAPTURE') {
+        window.__lensOverlayControllerInstance.startSnipping();
+        sendResponse({ status: 'snipping_started' });
+      } else if (request.action === 'SCAN_DIRECT_IMAGE_URL' && request.imageUrl) {
+        window.__lensOverlayControllerInstance.openLensStudio(request.imageUrl);
+        sendResponse({ status: 'studio_opened' });
+      }
+    });
+  }
 
 })();
