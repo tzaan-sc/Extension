@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lens OCR - Chuyển Ảnh Sang Chữ</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="brand">
+        <svg class="brand-icon" width="24" height="24" viewBox="0 0 128 128" fill="none">
+          <rect width="128" height="128" rx="28" fill="#0f172a" />
+          <path d="M28 44 V32 H44" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
+          <path d="M100 44 V32 H84" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
+          <path d="M28 84 V96 H44" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
+          <path d="M100 84 V96 H84" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" />
+          <circle cx="64" cy="64" r="22" stroke="#38bdf8" stroke-width="7" fill="none" />
+        </svg>
+        <div>
+          <h1 class="brand-title">Lens OCR</h1>
+          <span class="brand-subtitle">Quét chữ kiểu Google Lens</span>
+        </div>
+      </div>
+      <button id="btn-toggle-settings" class="icon-btn" title="Cài đặt OCR & API">⚙️</button>
+    </header>
+
+    <!-- Main Action Panel -->
+    <main class="popup-main">
+      <div class="action-card">
+        <button id="btn-snip-capture" class="btn-primary">
+          <span class="btn-icon">🎯</span>
+          <div class="btn-text-wrap">
+            <span class="btn-main-title">Khoanh vùng quét chữ</span>
+            <span class="btn-sub-title">Chụp vùng bất kỳ trên trang web hiện tại</span>
+          </div>
+        </button>
+      </div>
+
+      <!-- Dropzone: Kéo thả hoặc dán ảnh -->
+      <div id="drop-zone" class="drop-zone">
+        <input type="file" id="file-input" accept="image/*" style="display: none;">
+        <div class="drop-zone-icon">🖼️</div>
+        <div class="drop-zone-title">Dán (Ctrl + V) hoặc thả ảnh vào đây</div>
+        <div class="drop-zone-desc">Hoặc bấm vào để chọn ảnh từ máy tính</div>
+      </div>
+
+      <!-- Settings Panel (Collapsible) -->
+      <div id="settings-panel" class="settings-panel" style="display: none;">
+        <h3 class="settings-title">⚙️ Cấu hình OCR</h3>
+        
+        <div class="form-group">
+          <label for="select-engine">Bộ nhận diện (OCR Engine):</label>
+          <select id="select-engine" class="form-select">
+            <option value="tesseract">Tesseract.js (100% Offline / Miễn phí)</option>
+            <option value="google_vision">Google Cloud Vision API (Độ chính xác cao)</option>
+            <option value="gemini">Gemini 1.5 Flash Vision (Google AI)</option>
+            <option value="ocr_space">OCR.Space API (Online OCR)</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="group-tesseract-lang">
+          <label for="select-lang">Ngôn ngữ quét (Tesseract):</label>
+          <select id="select-lang" class="form-select">
+            <option value="vie+eng">Tiếng Việt + English (Khuyên dùng)</option>
+            <option value="vie">Chỉ Tiếng Việt</option>
+            <option value="eng">Chỉ English</option>
+            <option value="chi_sim">Tiếng Trung (Giản thể)</option>
+            <option value="jpn">Tiếng Nhật</option>
+          </select>
+        </div>
+
+        <div class="form-group api-key-field" id="group-google-key" style="display: none;">
+          <label for="input-google-key">Google Vision API Key:</label>
+          <input type="password" id="input-google-key" class="form-input" placeholder="Nhập API key của Google Cloud">
+        </div>
+
+        <div class="form-group api-key-field" id="group-gemini-key" style="display: none;">
+          <label for="input-gemini-key">Gemini AI API Key:</label>
+          <input type="password" id="input-gemini-key" class="form-input" placeholder="Nhập API key từ Google AI Studio">
+        </div>
+
+        <div class="form-group api-key-field" id="group-ocrspace-key" style="display: none;">
+          <label for="input-ocrspace-key">OCR.Space API Key:</label>
+          <input type="password" id="input-ocrspace-key" class="form-input" placeholder="Nhập OCR.Space API Key (K8xxxxxxxx)">
+        </div>
+
+        <button id="btn-save-settings" class="btn-secondary">💾 Lưu cấu hình</button>
+        <span id="save-status" class="save-status"></span>
+      </div>
+    </main>
+
+    <!-- Footer tips -->
+    <footer class="popup-footer">
+      <span>💡 Mẹo: Nhấp chuột phải vào bất kỳ hình ảnh nào và chọn <b>"Quét chữ từ hình ảnh này"</b></span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

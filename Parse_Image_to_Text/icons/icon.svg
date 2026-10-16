@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="50%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#0f172a" />
+  <!-- Corner Lens Markers -->
+  <path d="M28 44 V32 H44" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  <path d="M100 44 V32 H84" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  <path d="M28 84 V96 H44" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  <path d="M100 84 V96 H84" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  <!-- Central Scan Circle -->
+  <circle cx="64" cy="64" r="22" stroke="url(#grad)" stroke-width="5" fill="rgba(56, 189, 248, 0.15)" />
+  <!-- Text 'T' inside -->
+  <text x="64" y="73" font-family="Segoe UI, sans-serif" font-size="26" font-weight="bold" fill="#38bdf8" text-anchor="middle">T</text>
+  <!-- Sparkle dot -->
+  <circle cx="88" cy="40" r="5" fill="#f43f5e" />
+</svg>
