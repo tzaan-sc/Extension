@@ -54,6 +54,36 @@
     }
   });
 
+  /**
+   * Xác định extension chính xác dựa trên mimeType từ YouTube
+   * YouTube KHÔNG dùng mp3 — chỉ có mp4/webm cho video và m4a/weba cho audio
+   */
+  function getYouTubeMediaExt(mimeType) {
+    if (!mimeType) return 'mp4';
+    const mime = mimeType.toLowerCase();
+    if (mime.includes('video/mp4')) return 'mp4';
+    if (mime.includes('video/webm')) return 'webm';
+    if (mime.includes('audio/mp4')) return 'm4a';
+    if (mime.includes('audio/webm')) return 'weba';
+    if (mime.startsWith('audio/')) return 'm4a';
+    return 'mp4';
+  }
+
+  /**
+   * Trích xuất tên codec ngắn gọn từ mimeType
+   * Ví dụ: 'video/mp4; codecs="avc1.64001F"' → 'H.264'
+   */
+  function getCodecLabel(mimeType) {
+    if (!mimeType) return '';
+    const mime = mimeType.toLowerCase();
+    if (mime.includes('avc1')) return 'H.264';
+    if (mime.includes('av01')) return 'AV1';
+    if (mime.includes('vp9') || mime.includes('vp09')) return 'VP9';
+    if (mime.includes('mp4a')) return 'AAC';
+    if (mime.includes('opus')) return 'Opus';
+    return '';
+  }
+
   function handleYouTubeData(data) {
     const { videoDetails, streamingData, captionTracks } = data;
     if (!streamingData) return;
@@ -62,52 +92,65 @@
     const thumbnail = videoDetails?.thumbnail?.thumbnails?.slice(-1)[0]?.url || '';
     const batchItems = [];
 
-    // URL đã được injected.js giải mã cipher + n-transform sẵn rồi
+    // ═══════════════════════════════════════════════════════
+    // A. formats[] = Video CÓ TIẾNG (muxed video+audio)
+    //    Đây là định dạng tốt nhất cho người dùng: mở ra là xem được ngay
+    //    Thường giới hạn ở 360p-720p
+    // ═══════════════════════════════════════════════════════
     if (streamingData.formats) {
       streamingData.formats.forEach((fmt) => {
         if (!fmt.url) return;
 
         const height = fmt.height || 360;
         const qualityName = getQualityLabel(height);
+        const ext = getYouTubeMediaExt(fmt.mimeType);
+        const codec = getCodecLabel(fmt.mimeType);
 
         batchItems.push({
-          id: `yt_std_${height}p`,
+          id: `yt_muxed_${height}p_${ext}`,
           url: fmt.url,
-          filename: `${sanitizeFilename(title)} [${height}p].mp4`,
+          filename: `${sanitizeFilename(title)} [${height}p].${ext}`,
           title: title,
-          quality: `${qualityName} (${height}p)`,
+          quality: `✅ ${qualityName} (${height}p) Video+Audio`,
           resolution: `${height}p`,
           thumbnail: thumbnail,
           type: 'video',
           category: 'video',
-          ext: 'mp4',
-          format: `${qualityName} (${height}p)`,
+          ext: ext,
+          format: `✅ ${qualityName} (${height}p)${codec ? ` ${codec}` : ''} — Có tiếng`,
           size: fmt.contentLength ? parseInt(fmt.contentLength, 10) : 0,
-          source: 'youtube'
+          source: 'youtube',
+          isMuxed: true
         });
       });
     }
 
+    // ═══════════════════════════════════════════════════════
+    // B. adaptiveFormats[] = Video KHÔNG TIẾNG hoặc Audio KHÔNG HÌNH
+    //    YouTube tách riêng video/audio cho chất lượng cao (1080p+)
+    // ═══════════════════════════════════════════════════════
     if (streamingData.adaptiveFormats) {
       streamingData.adaptiveFormats.forEach((fmt) => {
         if (!fmt.url) return;
 
         const isAudio = fmt.mimeType && fmt.mimeType.startsWith('audio/');
-        
+        const ext = getYouTubeMediaExt(fmt.mimeType);
+        const codec = getCodecLabel(fmt.mimeType);
+
         if (isAudio) {
           const bitrate = Math.round((fmt.bitrate || 128000) / 1000);
           batchItems.push({
-            id: `yt_audio_${bitrate}k`,
+            id: `yt_audio_${bitrate}k_${ext}`,
             url: fmt.url,
-            filename: `${sanitizeFilename(title)} [Audio ${bitrate}kbps].mp3`,
+            filename: `${sanitizeFilename(title)} [Audio ${bitrate}kbps].${ext}`,
             title: title,
-            quality: `Audio ${bitrate}kbps`,
+            quality: `🎵 Audio ${bitrate}kbps (${codec || ext.toUpperCase()})`,
             resolution: `${bitrate}kbps`,
             thumbnail: thumbnail,
             type: 'audio',
             category: 'audio',
-            ext: 'mp3',
-            format: `Âm thanh (${bitrate}kbps)`,
+            ext: ext,
+            format: `🎵 Âm thanh ${bitrate}kbps (${codec || ext.toUpperCase()})`,
             size: fmt.contentLength ? parseInt(fmt.contentLength, 10) : 0,
             source: 'youtube'
           });
@@ -116,24 +159,28 @@
           const qualityName = getQualityLabel(height);
 
           batchItems.push({
-            id: `yt_adapt_${height}p`,
+            id: `yt_adapt_${height}p_${ext}`,
             url: fmt.url,
-            filename: `${sanitizeFilename(title)} [${height}p].mp4`,
+            filename: `${sanitizeFilename(title)} [${height}p Video].${ext}`,
             title: title,
-            quality: `${qualityName} (${height}p)`,
+            quality: `🎬 ${qualityName} (${height}p) Chỉ hình .${ext}`,
             resolution: `${height}p`,
             thumbnail: thumbnail,
             type: 'video',
             category: 'video',
-            ext: 'mp4',
-            format: `${qualityName} (${height}p)`,
+            ext: ext,
+            format: `🎬 ${qualityName} (${height}p) ${codec || ext.toUpperCase()} — Không tiếng`,
             size: fmt.contentLength ? parseInt(fmt.contentLength, 10) : 0,
-            source: 'youtube'
+            source: 'youtube',
+            isMuxed: false
           });
         }
       });
     }
 
+    // ═══════════════════════════════════════════════════════
+    // C. Phụ đề
+    // ═══════════════════════════════════════════════════════
     if (captionTracks && captionTracks.length > 0) {
       captionTracks.forEach((cap, idx) => {
         if (cap.baseUrl) {

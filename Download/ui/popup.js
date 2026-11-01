@@ -445,7 +445,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             isYouTube: true,
             title: item.title,
             thumbnail: item.thumbnail,
-            videos: [],
+            muxedVideos: [],  // Video + Audio (dùng được ngay)
+            videos: [],       // Video-only (không tiếng, cần ghép ngoài)
             audios: [],
             subtitles: []
           });
@@ -460,8 +461,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (!group.audios.some(a => a.quality === item.quality)) {
             group.audios.push(item);
           }
+        } else if (item.isMuxed) {
+          // Muxed: video+audio, dùng id làm unique key
+          if (!group.muxedVideos.some(v => v.id === item.id)) {
+            group.muxedVideos.push(item);
+          }
         } else {
-          if (!group.videos.some(v => v.resolution === item.resolution)) {
+          // Video-only (adaptive), dùng id làm unique key
+          if (!group.videos.some(v => v.id === item.id)) {
             group.videos.push(item);
           }
         }
@@ -471,7 +478,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     for (const group of ytGroups.values()) {
-      group.videos.sort((a, b) => (parseInt(b.resolution, 10) || 0) - (parseInt(a.resolution, 10) || 0));
+      // Sắp xếp muxed: ưu tiên mp4 hơn webm, rồi mới theo độ phân giải
+      group.muxedVideos.sort((a, b) => {
+        if (a.ext === 'mp4' && b.ext !== 'mp4') return -1;
+        if (a.ext !== 'mp4' && b.ext === 'mp4') return 1;
+        return (parseInt(b.resolution, 10) || 0) - (parseInt(a.resolution, 10) || 0);
+      });
+      // Video-only: ưu tiên mp4/H.264 hơn webm/VP9/AV1 (Windows tương thích tốt hơn)
+      group.videos.sort((a, b) => {
+        if (a.ext === 'mp4' && b.ext !== 'mp4') return -1;
+        if (a.ext !== 'mp4' && b.ext === 'mp4') return 1;
+        return (parseInt(b.resolution, 10) || 0) - (parseInt(a.resolution, 10) || 0);
+      });
     }
 
     return [...Array.from(ytGroups.values()), ...otherItems];
@@ -961,19 +979,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     displayList.forEach((item) => {
       // A. YouTube Item
       if (item.isYouTube) {
-        const showVideo = (currentCategory === 'all' || currentCategory === 'video') && item.videos.length > 0;
+        const showMuxed = (currentCategory === 'all' || currentCategory === 'video') && item.muxedVideos.length > 0;
+        const showVideoOnly = (currentCategory === 'all' || currentCategory === 'video') && item.videos.length > 0;
         const showAudio = (currentCategory === 'all' || currentCategory === 'audio') && item.audios.length > 0;
         const showSub = (currentCategory === 'all' || currentCategory === 'document') && item.subtitles.length > 0;
 
-        if (!showVideo && !showAudio && !showSub) return;
+        if (!showMuxed && !showVideoOnly && !showAudio && !showSub) return;
         renderedCount++;
 
         const card = document.createElement('div');
         card.className = 'yt-master-card';
 
-        let videoOptions = item.videos.map((v, i) => `<option value="v_${i}">${v.quality || v.resolution} (.mp4)</option>`).join('');
-        let audioOptions = item.audios.map((a, i) => `<option value="a_${i}">${a.quality} (.mp3)</option>`).join('');
-        let subOptions = item.subtitles.map((s, i) => `<option value="s_${i}">${s.quality} (.srt)</option>`).join('');
+        // Hiển thị đúng extension trong dropdown
+        let muxedOptions = item.muxedVideos.map((v, i) =>
+          `<option value="m_${i}">${v.quality || v.resolution} (.${v.ext || 'mp4'})</option>`
+        ).join('');
+        let videoOptions = item.videos.map((v, i) =>
+          `<option value="v_${i}">${v.quality || v.resolution} (.${v.ext || 'mp4'})</option>`
+        ).join('');
+        let audioOptions = item.audios.map((a, i) =>
+          `<option value="a_${i}">${a.quality} (.${a.ext || 'm4a'})</option>`
+        ).join('');
+        let subOptions = item.subtitles.map((s, i) =>
+          `<option value="s_${i}">${s.quality} (.srt)</option>`
+        ).join('');
+
+        const totalVideoCount = item.muxedVideos.length + item.videos.length;
 
         card.innerHTML = `
           <div class="media-info">
@@ -982,16 +1013,26 @@ document.addEventListener('DOMContentLoaded', async () => {
               <span class="media-title" title="${item.title}">${item.title}</span>
               <div class="media-tags">
                 <span class="badge badge-video">YOUTUBE</span>
-                ${item.videos.length > 0 ? `<span class="badge badge-video">${item.videos.length} VIDEO</span>` : ''}
+                ${totalVideoCount > 0 ? `<span class="badge badge-video">${totalVideoCount} VIDEO</span>` : ''}
                 ${item.audios.length > 0 ? `<span class="badge badge-audio">${item.audios.length} AUDIO</span>` : ''}
                 ${item.subtitles.length > 0 ? `<span class="badge badge-doc">${item.subtitles.length} PHỤ ĐỀ</span>` : ''}
               </div>
             </div>
           </div>
 
-          ${showVideo ? `
+          ${showMuxed ? `
             <div class="format-section">
-              <div class="section-title"><span>ĐỘ PHÂN GIẢI VIDEO (.mp4)</span></div>
+              <div class="section-title"><span>✅ VIDEO CÓ TIẾNG — Mở được ngay</span></div>
+              <div class="format-row">
+                <select class="res-select sel-muxed">${muxedOptions}</select>
+                <button class="btn-download btn-dl-muxed"><span>Tải Video</span></button>
+              </div>
+            </div>
+          ` : ''}
+
+          ${showVideoOnly ? `
+            <div class="format-section">
+              <div class="section-title"><span>🎬 VIDEO KHÔNG TIẾNG — Cần ghép âm thanh riêng</span></div>
               <div class="format-row">
                 <select class="res-select sel-video">${videoOptions}</select>
                 <button class="btn-download btn-dl-video"><span>Tải Video</span></button>
@@ -1001,17 +1042,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           ${showAudio ? `
             <div class="format-section">
-              <div class="section-title"><span>ÂM THANH (.mp3)</span></div>
+              <div class="section-title"><span>🎵 ÂM THANH</span></div>
               <div class="format-row">
                 <select class="res-select sel-audio">${audioOptions}</select>
-                <button class="btn-download btn-dl-audio"><span>Tải MP3</span></button>
+                <button class="btn-download btn-dl-audio"><span>Tải Audio</span></button>
               </div>
             </div>
           ` : ''}
 
           ${showSub ? `
             <div class="format-section">
-              <div class="section-title"><span>PHỤ ĐỀ (.srt)</span></div>
+              <div class="section-title"><span>💬 PHỤ ĐỀ (.srt)</span></div>
               <div class="format-row">
                 <select class="res-select sel-sub">${subOptions}</select>
                 <button class="btn-download btn-dl-sub"><span>Tải Phụ Đề</span></button>
@@ -1020,6 +1061,16 @@ document.addEventListener('DOMContentLoaded', async () => {
           ` : ''}
         `;
 
+        // Muxed video (có tiếng) download
+        const btnDlMuxed = card.querySelector('.btn-dl-muxed');
+        if (btnDlMuxed) {
+          btnDlMuxed.addEventListener('click', () => {
+            const idx = parseInt(card.querySelector('.sel-muxed').value.replace('m_', ''), 10);
+            executeSecureDownload(item.muxedVideos[idx], btnDlMuxed);
+          });
+        }
+
+        // Video-only download
         const btnDlVid = card.querySelector('.btn-dl-video');
         if (btnDlVid) {
           btnDlVid.addEventListener('click', () => {
