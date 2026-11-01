@@ -62,17 +62,17 @@
     const thumbnail = videoDetails?.thumbnail?.thumbnails?.slice(-1)[0]?.url || '';
     const batchItems = [];
 
+    // URL đã được injected.js giải mã cipher + n-transform sẵn rồi
     if (streamingData.formats) {
       streamingData.formats.forEach((fmt) => {
-        const directUrl = fmt.url || extractCipherUrl(fmt);
-        if (!directUrl) return;
+        if (!fmt.url) return;
 
         const height = fmt.height || 360;
         const qualityName = getQualityLabel(height);
 
         batchItems.push({
           id: `yt_std_${height}p`,
-          url: directUrl,
+          url: fmt.url,
           filename: `${sanitizeFilename(title)} [${height}p].mp4`,
           title: title,
           quality: `${qualityName} (${height}p)`,
@@ -90,8 +90,7 @@
 
     if (streamingData.adaptiveFormats) {
       streamingData.adaptiveFormats.forEach((fmt) => {
-        const directUrl = fmt.url || extractCipherUrl(fmt);
-        if (!directUrl) return;
+        if (!fmt.url) return;
 
         const isAudio = fmt.mimeType && fmt.mimeType.startsWith('audio/');
         
@@ -99,7 +98,7 @@
           const bitrate = Math.round((fmt.bitrate || 128000) / 1000);
           batchItems.push({
             id: `yt_audio_${bitrate}k`,
-            url: directUrl,
+            url: fmt.url,
             filename: `${sanitizeFilename(title)} [Audio ${bitrate}kbps].mp3`,
             title: title,
             quality: `Audio ${bitrate}kbps`,
@@ -118,7 +117,7 @@
 
           batchItems.push({
             id: `yt_adapt_${height}p`,
-            url: directUrl,
+            url: fmt.url,
             filename: `${sanitizeFilename(title)} [${height}p].mp4`,
             title: title,
             quality: `${qualityName} (${height}p)`,
@@ -163,6 +162,9 @@
         action: 'ADD_BATCH_MEDIA',
         items: batchItems
       });
+      console.log(`[OmniLoader] YouTube: ${batchItems.length} formats detected for "${title}"`);
+    } else {
+      console.warn('[OmniLoader] YouTube: Không tìm thấy format nào có URL hợp lệ');
     }
   }
 
@@ -177,16 +179,8 @@
     return 'Di động (144p)';
   }
 
-  function extractCipherUrl(fmt) {
-    const cipher = fmt.signatureCipher || fmt.cipher;
-    if (!cipher) return null;
-    try {
-      const params = new URLSearchParams(cipher);
-      return params.get('url');
-    } catch (e) {
-      return null;
-    }
-  }
+  // extractCipherUrl() đã được xoá — Việc giải mã cipher giờ do injected.js xử lý
+  // trước khi gửi data qua postMessage. URL nhận được đã sẵn sàng tải.
 
   // Quét toàn diện DOM
   function scanDOMMedia() {

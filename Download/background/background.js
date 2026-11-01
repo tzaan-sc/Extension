@@ -257,12 +257,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       safeFilename += '.pdf';
     }
 
+    // Cấu hình download cơ bản
+    const downloadOptions = {
+      url: url,
+      filename: safeFilename,
+      saveAs: false
+    };
+
+    // Thêm Referer header cho YouTube CDN (googlevideo.com) — bắt buộc để tránh 403
+    if (url && url.includes('googlevideo.com')) {
+      downloadOptions.headers = [
+        { name: 'Referer', value: 'https://www.youtube.com/' }
+      ];
+    }
+
     chrome.downloads.download(
-      {
-        url: url,
-        filename: safeFilename,
-        saveAs: false
-      },
+      downloadOptions,
       (downloadId) => {
         if (chrome.runtime.lastError || !downloadId) {
           sendResponse({ success: false, error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'Lỗi tải file' });

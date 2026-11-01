@@ -1119,6 +1119,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnElement.innerHTML = `<span>⏳ Đang tải...</span>`;
     }
 
+    const filename = item.filename || `media_${Date.now()}.${item.ext || 'mp4'}`;
+
     const onFinish = (success) => {
       if (btnElement) {
         btnElement.disabled = false;
@@ -1131,36 +1133,51 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Đối với tài liệu PDF hoặc file từ Google Drive: Tải bằng bộ điều phối 4 tầng
     if (item.category === 'document' || item.ext === 'pdf' || item.source === 'google_drive') {
-      const ok = await downloadFileDirectly(item.url, item.filename || `Tai_Lieu_${Date.now()}.${item.ext || 'pdf'}`);
+      const ok = await downloadFileDirectly(item.url, filename);
       onFinish(ok);
       return;
     }
 
-    try {
-      const resp = await fetch(item.url);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    // Tầng 1: Tải trực tiếp qua chrome.downloads.download() — KHÔNG tải vào RAM
+    // Browser tự xử lý download, bao gồm cookies/auth, tiết kiệm bộ nhớ hoàn toàn
+    chrome.runtime.sendMessage({
+      action: 'DOWNLOAD_DIRECT',
+      url: item.url,
+      filename: filename
+    }, (res) => {
+      if (res && res.success) {
+        onFinish(true);
+        return;
+      }
 
-      const blob = await resp.blob();
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        chrome.runtime.sendMessage({
-          action: 'DOWNLOAD_DIRECT',
-          url: reader.result,
-          filename: item.filename || `media_${Date.now()}.${item.ext || 'mp4'}`
-        }, (res) => {
-          onFinish(res && res.success);
-        });
-      };
-      reader.readAsDataURL(blob);
-    } catch (e) {
-      chrome.runtime.sendMessage({
-        action: 'DOWNLOAD_DIRECT',
-        url: item.url,
-        filename: item.filename || `media_${Date.now()}.${item.ext || 'mp4'}`
-      }, (res) => {
-        onFinish(res && res.success);
-      });
-    }
+      // Tầng 2 (Fallback): fetch + Blob URL (không base64) cho trường hợp URL bị chặn CORS
+      (async () => {
+        try {
+          const resp = await fetch(item.url);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+          const blob = await resp.blob();
+          const blobUrl = URL.createObjectURL(blob);
+
+          chrome.runtime.sendMessage({
+            action: 'DOWNLOAD_DIRECT',
+            url: blobUrl,
+            filename: filename
+          }, (res2) => {
+            onFinish(res2 && res2.success);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+          });
+        } catch (e2) {
+          // Tầng 3: Mở tab mới với URL gốc để browser tự xử lý
+          try {
+            window.open(item.url, '_blank');
+            onFinish(true);
+          } catch (e3) {
+            onFinish(false);
+          }
+        }
+      })();
+    });
   }
 
   async function downloadSubtitleAsSrt(subItem, btnElement) {
