@@ -18,6 +18,10 @@
 
     if (event.data.type === 'OMNILOADER_SNIFFED_URL') {
       const { url, title } = event.data;
+
+      // Bỏ qua mọi URL YouTube/googlevideo — chỉ xử lý qua OMNILOADER_YOUTUBE_DATA
+      // Các chunk DASH từ googlevideo.com/videoplayback là segment ngắn, không phải file hoàn chỉnh
+      if (url.includes('googlevideo.com') || url.includes('youtube.com')) return;
       if (url.includes('&range=') || url.includes('chunk_')) return;
 
       const isPdf = url.toLowerCase().includes('.pdf');

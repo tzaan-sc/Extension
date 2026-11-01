@@ -327,6 +327,7 @@
   // 5. YouTube Data Handler — Xử lý playerResponse
   // ============================================================
   let _lastVideoId = null;
+  let _lastProcessedTime = 0;
 
   /**
    * Xử lý playerResponse từ YouTube:
@@ -338,9 +339,11 @@
     if (!playerResponse || !playerResponse.streamingData) return;
 
     const videoId = playerResponse.videoDetails?.videoId;
-    // Tránh xử lý trùng lặp cùng 1 video
-    if (videoId && videoId === _lastVideoId) return;
+    const now = Date.now();
+    // Tránh xử lý trùng lặp: cùng video trong vòng 30 giây
+    if (videoId && videoId === _lastVideoId && (now - _lastProcessedTime) < 30000) return;
     _lastVideoId = videoId;
+    _lastProcessedTime = now;
 
     // Kiểm tra xem có format nào cần giải mã cipher không
     const allFormats = [
@@ -359,19 +362,30 @@
       if (!formats) return [];
       return formats.map(fmt => {
         let url = fmt.url;
+        let deciphered = true;
 
         // Giải mã cipher nếu URL chưa có sẵn
         if (!url && (fmt.signatureCipher || fmt.cipher)) {
           url = decipherUrl(fmt.signatureCipher || fmt.cipher);
+
+          // Fallback: nếu decipher thất bại (engine chưa load được base.js),
+          // dùng URL gốc từ cipher KHÔNG có chữ ký — có thể bị 403 nhưng tốt hơn là mất hết
+          if (!url) {
+            deciphered = false;
+            try {
+              const params = new URLSearchParams(fmt.signatureCipher || fmt.cipher);
+              url = params.get('url') || null;
+            } catch (e) {}
+          }
         }
 
-        // Áp dụng N-Transform cho URL trực tiếp (tránh throttle)
-        if (url && !fmt.signatureCipher && !fmt.cipher) {
+        // Áp dụng N-Transform cho URL trực tiếp có sẵn (không phải cipher)
+        if (url && deciphered && !fmt.signatureCipher && !fmt.cipher) {
           url = applyNTransform(url);
         }
 
-        return { ...fmt, url };
-      }).filter(fmt => fmt.url); // Chỉ giữ format có URL hợp lệ
+        return { ...fmt, url, _deciphered: deciphered };
+      }).filter(fmt => fmt.url); // Chỉ giữ format có URL (dù có thể chưa ký)
     };
 
     const resolvedData = {
@@ -419,10 +433,16 @@
   }
 
   // ============================================================
-  // 7. Generic URL Checker (Cho các trang không phải YouTube)
+  // 7. Generic URL Checker (Chỉ dùng cho các trang NGOÀI YouTube)
+  // YouTube dùng riêng OMNILOADER_YOUTUBE_DATA — KHÔNG sniff googlevideo.com
+  // vì các URL đó là DASH chunk (vài giây), không phải file video hoàn chỉnh!
   // ============================================================
   function checkAndNotifyUrl(url, source) {
     if (!url || typeof url !== 'string') return;
+
+    // Bỏ qua hoàn toàn mọi URL từ YouTube — xử lý riêng qua handleYouTubePlayerResponse
+    if (url.includes('googlevideo.com') || url.includes('youtube.com') || url.includes('youtu.be')) return;
+
     const cleanUrl = url.split('?')[0].toLowerCase();
 
     const isMedia =
@@ -435,7 +455,6 @@
       cleanUrl.endsWith('.wav') ||
       cleanUrl.endsWith('.pdf') ||
       cleanUrl.endsWith('.ts') ||
-      url.includes('googlevideo.com/videoplayback') ||
       url.includes('tiktokcdn.com') ||
       url.includes('fbcdn.net') ||
       url.includes('cdninstagram.com') ||

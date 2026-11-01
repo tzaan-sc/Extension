@@ -123,9 +123,15 @@ export class MediaSniffer {
     const cleanUrl = url.split('?')[0].toLowerCase();
     const mime = (mimeType || '').toLowerCase();
 
-    // Bỏ qua YouTube trong Network Sniffer vì YouTube đã có Module Riêng chuẩn 100%
-    if (url.includes('googlevideo.com') || url.includes('youtube.com')) {
-      return null;
+    // YouTube API calls: bỏ qua hoàn toàn
+    if (url.includes('youtube.com')) return null;
+
+    // googlevideo.com: CHỈ cho qua progressive stream (không có &range= hoặc &sq=)
+    // DASH/HLS chunk URLs có &range= hoặc &sq= là fragments ngắn, không phải file hoàn chỉnh
+    if (url.includes('googlevideo.com')) {
+      if (url.includes('&range=') || url.includes('&sq=') || url.includes('chunk_')) return null;
+      // Progressive URL không có chunk params — có thể là muxed video hoàn chỉnh, cho qua
+      // Content-Type header sẽ xác định đây là video/mp4 hay video/webm
     }
 
     // 1. Âm thanh
