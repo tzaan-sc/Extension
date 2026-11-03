@@ -4,6 +4,8 @@
   'use strict';
 
   function injectMainWorldScript() {
+    // Nếu trình duyệt đã nạp qua manifest.json "world": "MAIN", không cần inject lại qua DOM
+    if (window.__omniMainInjected) return;
     try {
       const script = document.createElement('script');
       script.src = chrome.runtime.getURL('content/injected.js');
@@ -47,6 +49,10 @@
 
     if (event.data.type === 'OMNILOADER_YOUTUBE_DATA') {
       handleYouTubeData(event.data);
+    }
+
+    if (event.data.type === 'OMNILOADER_YOUTUBE_PLAYBACK_URL') {
+      handleYouTubePlaybackUrl(event.data);
     }
 
     if (event.data.type === 'OMNI_START_REGION_SCAN') {
@@ -217,6 +223,47 @@
     } else {
       console.warn('[OmniLoader] YouTube: Không tìm thấy format nào có URL hợp lệ');
     }
+  }
+
+  const knownItags = {
+    18: { height: 360, isAudio: false, isMuxed: true, ext: 'mp4', quality: '360p Tiêu chuẩn', format: '✅ 360p MP4 — Có tiếng' },
+    22: { height: 720, isAudio: false, isMuxed: true, ext: 'mp4', quality: '720p HD', format: '✅ 720p HD MP4 — Có tiếng' },
+    137: { height: 1080, isAudio: false, isMuxed: false, ext: 'mp4', quality: '1080p Full HD', format: '🎬 1080p Full HD MP4 — Không tiếng' },
+    136: { height: 720, isAudio: false, isMuxed: false, ext: 'mp4', quality: '720p HD', format: '🎬 720p HD MP4 — Không tiếng' },
+    135: { height: 480, isAudio: false, isMuxed: false, ext: 'mp4', quality: '480p Tiêu chuẩn', format: '🎬 480p MP4 — Không tiếng' },
+    134: { height: 360, isAudio: false, isMuxed: false, ext: 'mp4', quality: '360p', format: '🎬 360p MP4 — Không tiếng' },
+    140: { bitrate: 128, isAudio: true, isMuxed: false, ext: 'm4a', quality: 'Audio 128kbps (AAC/M4A)', format: '🎵 Âm thanh 128kbps AAC/M4A' },
+    251: { bitrate: 160, isAudio: true, isMuxed: false, ext: 'weba', quality: 'Audio 160kbps (Opus)', format: '🎵 Âm thanh 160kbps Opus' }
+  };
+
+  function handleYouTubePlaybackUrl(data) {
+    const { itag, url, title } = data;
+    const info = knownItags[itag];
+    if (!info) return;
+
+    const safeTitle = sanitizeFilename(title || document.title);
+    const item = {
+      id: info.isAudio ? `yt_live_audio_${itag}` : (info.isMuxed ? `yt_live_muxed_${itag}` : `yt_live_adapt_${itag}`),
+      url: url,
+      filename: `${safeTitle} [${info.quality}].${info.ext}`,
+      title: title || document.title,
+      quality: info.quality,
+      resolution: info.isAudio ? `${info.bitrate}kbps` : `${info.height}p`,
+      thumbnail: '',
+      type: info.isAudio ? 'audio' : 'video',
+      category: info.isAudio ? 'audio' : 'video',
+      ext: info.ext,
+      format: info.format,
+      size: 0,
+      source: 'youtube',
+      isMuxed: info.isMuxed
+    };
+
+    chrome.runtime.sendMessage({
+      action: 'ADD_BATCH_MEDIA',
+      items: [item]
+    });
+    console.log(`[OmniLoader] Đã bắt link stream YouTube thực tế (itag ${itag}): ${info.format}`);
   }
 
   function getQualityLabel(height) {

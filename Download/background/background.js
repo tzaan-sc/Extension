@@ -264,13 +264,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       saveAs: false
     };
 
-    // Thêm Referer header cho YouTube CDN (googlevideo.com) — bắt buộc để tránh 403
-    if (url && url.includes('googlevideo.com')) {
-      downloadOptions.headers = [
-        { name: 'Referer', value: 'https://www.youtube.com/' }
-      ];
-    }
-
     chrome.downloads.download(
       downloadOptions,
       (downloadId) => {

@@ -453,22 +453,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const group = ytGroups.get(key);
+        if (item.thumbnail && !group.thumbnail) group.thumbnail = item.thumbnail;
+
         if (item.type === 'subtitle') {
           if (!group.subtitles.some(s => s.quality === item.quality)) {
             group.subtitles.push(item);
           }
         } else if (item.category === 'audio') {
-          if (!group.audios.some(a => a.quality === item.quality)) {
+          if (!group.audios.some(a => a.quality === item.quality || a.id === item.id)) {
             group.audios.push(item);
           }
         } else if (item.isMuxed) {
-          // Muxed: video+audio, dùng id làm unique key
-          if (!group.muxedVideos.some(v => v.id === item.id)) {
+          // Muxed: video+audio
+          if (!group.muxedVideos.some(v => v.id === item.id || v.quality === item.quality)) {
             group.muxedVideos.push(item);
           }
         } else {
-          // Video-only (adaptive), dùng id làm unique key
-          if (!group.videos.some(v => v.id === item.id)) {
+          // Video-only (adaptive)
+          if (!group.videos.some(v => v.id === item.id || (v.resolution === item.resolution && v.ext === item.ext))) {
             group.videos.push(item);
           }
         }

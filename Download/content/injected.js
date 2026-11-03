@@ -5,6 +5,9 @@
 (function () {
   'use strict';
 
+  if (window.__omniMainInjected) return;
+  window.__omniMainInjected = true;
+
   // ============================================================
   // 1. Hook Fetch API — Bắt cả request URL lẫn response body
   // ============================================================
@@ -13,9 +16,13 @@
     const request = args[0];
     const url = typeof request === 'string' ? request : (request?.url || '');
 
-    // Sniff URL media tổng quát
+    // Sniff URL media tổng quát & phát hiện stream YouTube live
     if (url) {
-      checkAndNotifyUrl(url, 'fetch');
+      if (url.includes('googlevideo.com/videoplayback')) {
+        handleGoogleVideoPlaybackUrl(url);
+      } else {
+        checkAndNotifyUrl(url, 'fetch');
+      }
     }
 
     // Gọi fetch gốc
@@ -44,7 +51,12 @@
   XMLHttpRequest.prototype.open = function (method, url, ...rest) {
     this.__omniUrl = url ? url.toString() : '';
     if (url) {
-      checkAndNotifyUrl(url.toString(), 'xhr');
+      const urlStr = url.toString();
+      if (urlStr.includes('googlevideo.com/videoplayback')) {
+        handleGoogleVideoPlaybackUrl(urlStr);
+      } else {
+        checkAndNotifyUrl(urlStr, 'xhr');
+      }
     }
     return originalXHROpen.apply(this, [method, url, ...rest]);
   };
@@ -89,7 +101,7 @@
    */
   function getPlayerJsUrl() {
     // Cách 1: Từ thẻ <script> trực tiếp
-    const scripts = document.querySelectorAll('script[src*="/base.js"], script[src*="player_ias"]');
+    const scripts = document.querySelectorAll('script[src*="/base.js"], script[src*="player_ias"], script[src*="player_es6"]');
     for (const s of scripts) {
       if (s.src) return s.src;
     }
@@ -102,9 +114,9 @@
       }
     }
 
-    // Cách 3: Regex tìm trong HTML
+    // Cách 3: Regex tìm trong HTML (cả player_ias lẫn player_es6)
     const pageHtml = document.documentElement.innerHTML;
-    const match = pageHtml.match(/\/s\/player\/[a-zA-Z0-9]+\/player_ias\.vflset\/[^"'\s]+?\/base\.js/);
+    const match = pageHtml.match(/\/s\/player\/[a-zA-Z0-9]+\/(?:player_ias|player_es6)\.vflset\/[^"'\s]+?\/base\.js/);
     if (match) {
       return `https://www.youtube.com${match[0]}`;
     }
@@ -324,10 +336,85 @@
   }
 
   // ============================================================
-  // 5. YouTube Data Handler — Xử lý playerResponse
+  // 5. YouTube Data Handler — Xử lý playerResponse & Innertube API
   // ============================================================
   let _lastVideoId = null;
   let _lastProcessedTime = 0;
+  let _lastAndroidVideoId = null;
+  const _capturedItags = new Set();
+
+  /**
+   * Gọi Innertube API với client ANDROID_VR để lấy direct stream URL sạch
+   * Không bị Signature Cipher, có sẵn 360p (video+audio) và audio track trực tiếp
+   */
+  async function fetchInnertubeAndroid(videoId) {
+    if (!videoId) return null;
+    try {
+      const payload = {
+        videoId: videoId,
+        context: {
+          client: {
+            clientName: 'ANDROID_VR',
+            clientVersion: '1.61.48',
+            deviceMake: 'Oculus',
+            deviceModel: 'Quest 3',
+            osName: 'Android',
+            osVersion: '12',
+            hl: 'en',
+            gl: 'US'
+          }
+        }
+      };
+
+      const resp = await originalFetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; Quest 3) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/33.0.0.12.56.574693156 SamsungBrowser/4.0 Chrome/122.0.6261.139 Mobile VR Safari/537.36'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      if (data && data.streamingData) {
+        return data;
+      }
+    } catch (e) {
+      console.warn('[OmniLoader] Android Innertube fetch error:', e);
+    }
+    return null;
+  }
+
+  /**
+   * Bắt các gói tin googlevideo.com/videoplayback từ chính player đang phát
+   * Chứa URL đã được ký và xác thực 100% hợp lệ bởi trình duyệt
+   */
+  function handleGoogleVideoPlaybackUrl(fullUrl) {
+    if (!fullUrl || !fullUrl.includes('googlevideo.com/videoplayback')) return;
+    try {
+      const parsed = new URL(fullUrl);
+      const itagStr = parsed.searchParams.get('itag');
+      if (!itagStr) return;
+      const itag = parseInt(itagStr, 10);
+
+      const dedupeKey = `${itag}_${parsed.searchParams.get('id') || ''}`;
+      if (_capturedItags.has(dedupeKey)) return;
+      _capturedItags.add(dedupeKey);
+
+      // Xóa các tham số chunk range để chuyển thành URL full stream
+      parsed.searchParams.delete('range');
+      parsed.searchParams.delete('sq');
+      const cleanUrl = parsed.toString();
+
+      window.postMessage({
+        type: 'OMNILOADER_YOUTUBE_PLAYBACK_URL',
+        itag: itag,
+        url: cleanUrl,
+        title: document.title.replace(' - YouTube', '').trim()
+      }, '*');
+    } catch (e) {}
+  }
 
   /**
    * Xử lý playerResponse từ YouTube:
@@ -340,8 +427,8 @@
 
     const videoId = playerResponse.videoDetails?.videoId;
     const now = Date.now();
-    // Tránh xử lý trùng lặp: cùng video trong vòng 30 giây
-    if (videoId && videoId === _lastVideoId && (now - _lastProcessedTime) < 30000) return;
+    // Tránh xử lý trùng lặp: cùng video trong vòng 10 giây
+    if (videoId && videoId === _lastVideoId && (now - _lastProcessedTime) < 10000) return;
     _lastVideoId = videoId;
     _lastProcessedTime = now;
 
@@ -368,8 +455,6 @@
         if (!url && (fmt.signatureCipher || fmt.cipher)) {
           url = decipherUrl(fmt.signatureCipher || fmt.cipher);
 
-          // Fallback: nếu decipher thất bại (engine chưa load được base.js),
-          // dùng URL gốc từ cipher KHÔNG có chữ ký — có thể bị 403 nhưng tốt hơn là mất hết
           if (!url) {
             deciphered = false;
             try {
@@ -385,7 +470,7 @@
         }
 
         return { ...fmt, url, _deciphered: deciphered };
-      }).filter(fmt => fmt.url); // Chỉ giữ format có URL (dù có thể chưa ký)
+      }).filter(fmt => fmt.url);
     };
 
     const resolvedData = {
@@ -404,15 +489,38 @@
   }
 
   // ============================================================
-  // 6. Legacy YouTube Scanner (Dự phòng khi hook API không bắt được)
+  // 6. YouTube Scanner Đa Tầng (Android Innertube + DOM + Global Player)
   // ============================================================
-  function scanYouTube() {
+  async function scanYouTube() {
     if (!window.location.hostname.includes('youtube.com')) return;
-    if (!window.location.pathname.startsWith('/watch')) return;
+    const path = window.location.pathname;
+    if (!path.startsWith('/watch') && !path.startsWith('/shorts')) return;
 
+    let videoId = null;
+    if (path.startsWith('/watch')) {
+      const params = new URLSearchParams(window.location.search);
+      videoId = params.get('v');
+    } else if (path.startsWith('/shorts/')) {
+      videoId = path.split('/')[2];
+    }
+
+    // Tầng 1: Lấy stream sạch từ Android Innertube API (Không bị cipher, 100% direct URL)
+    if (videoId && videoId !== _lastAndroidVideoId) {
+      _lastAndroidVideoId = videoId;
+      try {
+        const androidData = await fetchInnertubeAndroid(videoId);
+        if (androidData && androidData.streamingData &&
+            ((androidData.streamingData.formats && androidData.streamingData.formats.length > 0) ||
+             (androidData.streamingData.adaptiveFormats && androidData.streamingData.adaptiveFormats.length > 0))) {
+          console.log('[OmniLoader] ✅ Bắt được stream sạch từ Android Innertube cho video:', videoId);
+          handleYouTubePlayerResponse(androidData);
+          return;
+        }
+      } catch (e) {}
+    }
+
+    // Tầng 2: Từ YouTube Player Component hoặc biến toàn cục
     let playerResponse = null;
-
-    // Cách 1: Từ YouTube Player Component
     const moviePlayer = document.getElementById('movie_player');
     if (moviePlayer && typeof moviePlayer.getPlayerResponse === 'function') {
       try {
@@ -420,7 +528,6 @@
       } catch (e) {}
     }
 
-    // Cách 2: Từ biến toàn cục
     if (!playerResponse) {
       playerResponse = window.ytInitialPlayerResponse ||
         (window.ytplayer && window.ytplayer.config && window.ytplayer.config.args &&
@@ -434,8 +541,6 @@
 
   // ============================================================
   // 7. Generic URL Checker (Chỉ dùng cho các trang NGOÀI YouTube)
-  // YouTube dùng riêng OMNILOADER_YOUTUBE_DATA — KHÔNG sniff googlevideo.com
-  // vì các URL đó là DASH chunk (vài giây), không phải file video hoàn chỉnh!
   // ============================================================
   function checkAndNotifyUrl(url, source) {
     if (!url || typeof url !== 'string') return;
@@ -480,6 +585,8 @@
   // SPA Navigation: Reset video ID khi chuyển trang
   window.addEventListener('yt-navigate-finish', () => {
     _lastVideoId = null;
+    _lastAndroidVideoId = null;
+    _capturedItags.clear();
     setTimeout(scanYouTube, 1500);
   });
 
