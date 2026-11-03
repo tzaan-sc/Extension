@@ -166,6 +166,241 @@ class HLSDownloader {
   }
 }
 
+// 3. Tải qua Range Request Chunks (Chia nhỏ khối byte, tải song song, chống nghẽn & rớt mạng)
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+class RangeChunkDownloader {
+  constructor(url, filename, downloadId, options = {}) {
+    this.url = url;
+    this.filename = filename || 'download_media.mp4';
+    this.downloadId = downloadId;
+    this.chunkSize = options.chunkSize || (5 * 1024 * 1024); // 5MB mỗi khối
+    this.concurrency = options.concurrency || 3; // 3 luồng tải song song
+    this.isCancelled = false;
+    this.abortControllers = [];
+    this.lastProgress = { percent: 0, loaded: 0, total: 0 };
+  }
+
+  async getTotalSize() {
+    try {
+      const controller = new AbortController();
+      this.abortControllers.push(controller);
+      const resp = await fetch(this.url, {
+        method: 'GET',
+        headers: { 'Range': 'bytes=0-0' },
+        signal: controller.signal
+      });
+
+      if (resp.status === 206) {
+        const range = resp.headers.get('content-range');
+        const match = range ? range.match(/\/(\d+)/) : null;
+        if (match) return parseInt(match[1], 10);
+      }
+      const len = resp.headers.get('content-length');
+      if (len) return parseInt(len, 10);
+    } catch (e) {
+      console.warn('[RangeChunkDownloader] Lỗi lấy kích thước file:', e);
+    }
+    return 0;
+  }
+
+  async downloadAndAssemble() {
+    const totalSize = await this.getTotalSize();
+
+    // Nếu không lấy được dung lượng hoặc server không trả Range 206, fallback sang tải stream
+    if (totalSize <= 0) {
+      console.log('[RangeChunkDownloader] Server không hỗ trợ Range, chuyển sang tải stream trực tiếp...');
+      return this.downloadDirectStream();
+    }
+
+    const chunkCount = Math.ceil(totalSize / this.chunkSize);
+    const chunkBuffers = new Array(chunkCount);
+    let loadedBytes = 0;
+    const startTime = Date.now();
+
+    const chunkRanges = [];
+    for (let i = 0; i < chunkCount; i++) {
+      const start = i * this.chunkSize;
+      const end = Math.min((i + 1) * this.chunkSize - 1, totalSize - 1);
+      chunkRanges.push({ index: i, start, end });
+    }
+
+    let currentIndex = 0;
+    const worker = async () => {
+      while (currentIndex < chunkRanges.length && !this.isCancelled) {
+        const task = chunkRanges[currentIndex++];
+        let retries = 3;
+        let success = false;
+
+        while (retries > 0 && !success && !this.isCancelled) {
+          try {
+            const controller = new AbortController();
+            this.abortControllers.push(controller);
+
+            const resp = await fetch(this.url, {
+              headers: { 'Range': `bytes=${task.start}-${task.end}` },
+              signal: controller.signal
+            });
+
+            if (!resp.ok && resp.status !== 206) {
+              throw new Error(`HTTP ${resp.status}`);
+            }
+
+            const buffer = await resp.arrayBuffer();
+            chunkBuffers[task.index] = new Uint8Array(buffer);
+            loadedBytes += buffer.byteLength;
+            success = true;
+
+            const elapsedSec = (Date.now() - startTime) / 1000;
+            const speedBytes = elapsedSec > 0 ? (loadedBytes / elapsedSec) : 0;
+            const percent = Math.min(100, Math.round((loadedBytes / totalSize) * 100));
+
+            this.lastProgress = {
+              percent,
+              loaded: loadedBytes,
+              total: totalSize,
+              loadedFormatted: formatBytes(loadedBytes),
+              totalFormatted: formatBytes(totalSize),
+              speedFormatted: `${formatBytes(speedBytes)}/s`,
+              filename: this.filename
+            };
+
+            chrome.runtime.sendMessage({
+              action: 'CHUNK_PROGRESS',
+              downloadId: this.downloadId,
+              progress: this.lastProgress
+            });
+          } catch (err) {
+            retries--;
+            if (retries === 0) {
+              throw new Error(`Lỗi tải khối ${task.index} (${task.start}-${task.end}): ${err.message}`);
+            }
+            await new Promise(r => setTimeout(r, 600));
+          }
+        }
+      }
+    };
+
+    const workers = [];
+    for (let w = 0; w < Math.min(this.concurrency, chunkCount); w++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+
+    if (this.isCancelled) return;
+
+    // Ghép các mảng Uint8Array thành Blob
+    const ext = (this.filename.split('.').pop() || 'mp4').toLowerCase();
+    const mimeType = ext === 'mp3' ? 'audio/mpeg'
+      : (ext === 'm4a' ? 'audio/mp4'
+      : (ext === 'webm' || ext === 'weba' ? (ext === 'weba' ? 'audio/webm' : 'video/webm')
+      : 'video/mp4'));
+
+    const mergedBlob = new Blob(chunkBuffers, { type: mimeType });
+    const blobUrl = URL.createObjectURL(mergedBlob);
+
+    // Bắt đầu lưu file qua chrome.downloads API
+    chrome.runtime.sendMessage({
+      action: 'DOWNLOAD_DIRECT',
+      url: blobUrl,
+      filename: this.filename
+    }, (res) => {
+      if (res && res.success) {
+        chrome.runtime.sendMessage({
+          action: 'CHUNK_COMPLETE',
+          downloadId: this.downloadId,
+          downloadIdChrome: res.downloadId,
+          filename: this.filename
+        });
+      } else {
+        chrome.runtime.sendMessage({
+          action: 'CHUNK_ERROR',
+          downloadId: this.downloadId,
+          error: res?.error || 'Lỗi lưu file tải về'
+        });
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 180000); // 3 phút giải phóng RAM
+    });
+  }
+
+  // Fallback: Tải tuần tự qua ReadableStream khi server không hỗ trợ Range
+  async downloadDirectStream() {
+    const controller = new AbortController();
+    this.abortControllers.push(controller);
+
+    const resp = await fetch(this.url, { signal: controller.signal });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const total = parseInt(resp.headers.get('content-length') || '0', 10);
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+
+    while (!this.isCancelled) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+
+      if (total > 0) {
+        const percent = Math.min(100, Math.round((loaded / total) * 100));
+        this.lastProgress = {
+          percent,
+          loaded,
+          total,
+          loadedFormatted: formatBytes(loaded),
+          totalFormatted: formatBytes(total),
+          filename: this.filename
+        };
+        chrome.runtime.sendMessage({
+          action: 'CHUNK_PROGRESS',
+          downloadId: this.downloadId,
+          progress: this.lastProgress
+        });
+      }
+    }
+
+    if (this.isCancelled) return;
+
+    const ext = (this.filename.split('.').pop() || 'mp4').toLowerCase();
+    const mimeType = ext === 'mp3' ? 'audio/mpeg' : (ext === 'm4a' ? 'audio/mp4' : 'video/mp4');
+    const blob = new Blob(chunks, { type: mimeType });
+    const blobUrl = URL.createObjectURL(blob);
+
+    chrome.runtime.sendMessage({
+      action: 'DOWNLOAD_DIRECT',
+      url: blobUrl,
+      filename: this.filename
+    }, () => {
+      chrome.runtime.sendMessage({
+        action: 'CHUNK_COMPLETE',
+        downloadId: this.downloadId,
+        filename: this.filename
+      });
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 180000);
+    });
+  }
+
+  cancel() {
+    this.isCancelled = true;
+    this.abortControllers.forEach(c => {
+      try { c.abort(); } catch (e) {}
+    });
+    chrome.runtime.sendMessage({
+      action: 'CHUNK_CANCELLED',
+      downloadId: this.downloadId
+    });
+  }
+}
+
+const activeChunkDownloads = new Map();
+
 // Lắng nghe lệnh từ Background
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'OFFSCREEN_START_HLS') {
@@ -182,6 +417,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const { url, filename } = message.payload;
     extractAudioFromVideo(url, filename);
     sendResponse({ started: true });
+    return true;
+  }
+
+  if (message.action === 'OFFSCREEN_START_CHUNK') {
+    const { url, filename, downloadId, options } = message.payload;
+    const downloader = new RangeChunkDownloader(url, filename, downloadId, options);
+    activeChunkDownloads.set(downloadId, downloader);
+
+    downloader.downloadAndAssemble().catch((err) => {
+      chrome.runtime.sendMessage({ action: 'CHUNK_ERROR', downloadId, error: err.message });
+    }).finally(() => {
+      activeChunkDownloads.delete(downloadId);
+    });
+
+    sendResponse({ started: true });
+    return true;
+  }
+
+  if (message.action === 'OFFSCREEN_CANCEL_CHUNK') {
+    const { downloadId } = message.payload;
+    if (activeChunkDownloads.has(downloadId)) {
+      activeChunkDownloads.get(downloadId).cancel();
+      activeChunkDownloads.delete(downloadId);
+    }
+    sendResponse({ cancelled: true });
+    return true;
+  }
+
+  if (message.action === 'OFFSCREEN_GET_ACTIVE_CHUNKS') {
+    const list = [];
+    for (const [id, d] of activeChunkDownloads.entries()) {
+      list.push({ downloadId: id, filename: d.filename, progress: d.lastProgress });
+    }
+    sendResponse({ activeDownloads: list });
     return true;
   }
 });

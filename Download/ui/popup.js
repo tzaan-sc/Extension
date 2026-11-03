@@ -1165,50 +1165,115 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  const activeDownloads = new Map();
+
   async function executeSecureDownload(item, btnElement) {
     if (!item || !item.url) return;
-    if (btnElement) {
-      btnElement.disabled = true;
-      btnElement.innerHTML = `<span>⏳ Đang tải...</span>`;
-    }
-
     const filename = item.filename || `media_${Date.now()}.${item.ext || 'mp4'}`;
 
-    const onFinish = (success) => {
+    // 1. Đối với tài liệu PDF hoặc file từ Google Drive: Tải bằng bộ điều phối tài liệu
+    if (item.category === 'document' || item.ext === 'pdf' || item.source === 'google_drive') {
+      if (btnElement) {
+        btnElement.disabled = true;
+        btnElement.innerHTML = `<span>⏳ Đang tải...</span>`;
+      }
+      const ok = await downloadFileDirectly(item.url, filename);
       if (btnElement) {
         btnElement.disabled = false;
-        btnElement.innerHTML = success ? `<span>✓ Đã tải!</span>` : `<span>Lỗi tải</span>`;
-        setTimeout(() => {
-          btnElement.innerHTML = `<span>Tải về</span>`;
-        }, 2000);
+        btnElement.innerHTML = ok ? `<span>✓ Đã tải!</span>` : `<span>Lỗi tải</span>`;
+        setTimeout(() => { btnElement.innerHTML = `<span>Tải về</span>`; }, 2000);
       }
-    };
-
-    // Đối với tài liệu PDF hoặc file từ Google Drive: Tải bằng bộ điều phối 4 tầng
-    if (item.category === 'document' || item.ext === 'pdf' || item.source === 'google_drive') {
-      const ok = await downloadFileDirectly(item.url, filename);
-      onFinish(ok);
       return;
     }
 
-    // Tầng 1: Tải trực tiếp qua chrome.downloads.download() — KHÔNG tải vào RAM
-    // Browser tự xử lý download, bao gồm cookies/auth, tiết kiệm bộ nhớ hoàn toàn
+    // 2. Đối với luồng HLS m3u8 (Web phim, anime, khóa học):
+    if (item.type === 'hls' || item.url.includes('.m3u8')) {
+      const downloadId = `hls_${Date.now()}`;
+      if (btnElement) {
+        btnElement.disabled = true;
+        btnElement.innerHTML = `<span>⏳ Kết nối HLS...</span>`;
+      }
+      activeDownloads.set(downloadId, {
+        item,
+        filename,
+        btnElement,
+        originalText: btnElement ? btnElement.innerHTML : 'Tải về'
+      });
+      chrome.runtime.sendMessage({
+        action: 'START_HLS_DOWNLOAD',
+        payload: {
+          url: item.url,
+          filename: filename,
+          downloadId: downloadId
+        }
+      }, (res) => {
+        if (!res || !res.success) {
+          fallbackDirectDownload(item.url, filename, btnElement);
+        }
+      });
+      return;
+    }
+
+    // 3. Đối với YouTube và các luồng Media lớn:
+    // Dùng Range Chunk Downloader (chia nhỏ 5MB/chunk, tải song song, chống 403 & rớt mạng, hiện % tiến trình)
+    startChunkDownload(item, filename, btnElement);
+  }
+
+  function startChunkDownload(item, filename, btnElement) {
+    const downloadId = `chunk_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+    if (btnElement) {
+      btnElement.disabled = true;
+      btnElement.innerHTML = `<span>⏳ Kết nối...</span>`;
+      btnElement.dataset.downloadId = downloadId;
+    }
+
+    activeDownloads.set(downloadId, {
+      item,
+      filename,
+      btnElement,
+      originalText: btnElement ? btnElement.innerHTML : 'Tải về'
+    });
+
+    chrome.runtime.sendMessage({
+      action: 'START_CHUNK_DOWNLOAD',
+      payload: {
+        url: item.url,
+        filename: filename,
+        downloadId: downloadId,
+        options: {
+          chunkSize: 5 * 1024 * 1024, // 5MB mỗi khối
+          concurrency: 3               // 3 luồng tải song song
+        }
+      }
+    }, (res) => {
+      if (!res || !res.success) {
+        console.warn('[OmniLoader] Không thể gọi Chunk Downloader, chuyển sang tải trực tiếp:', res?.error);
+        fallbackDirectDownload(item.url, filename, btnElement);
+      }
+    });
+  }
+
+  function fallbackDirectDownload(url, filename, btnElement) {
     chrome.runtime.sendMessage({
       action: 'DOWNLOAD_DIRECT',
-      url: item.url,
+      url: url,
       filename: filename
     }, (res) => {
       if (res && res.success) {
-        onFinish(true);
+        if (btnElement) {
+          btnElement.disabled = false;
+          btnElement.innerHTML = `<span>✓ Đã tải!</span>`;
+          setTimeout(() => { btnElement.innerHTML = `<span>Tải về</span>`; }, 2000);
+        }
         return;
       }
 
-      // Tầng 2 (Fallback): fetch + Blob URL (không base64) cho trường hợp URL bị chặn CORS
+      // Fallback Tầng 2: fetch + Blob URL
       (async () => {
         try {
-          const resp = await fetch(item.url);
+          const resp = await fetch(url);
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
           const blob = await resp.blob();
           const blobUrl = URL.createObjectURL(blob);
 
@@ -1217,21 +1282,90 @@ document.addEventListener('DOMContentLoaded', async () => {
             url: blobUrl,
             filename: filename
           }, (res2) => {
-            onFinish(res2 && res2.success);
+            if (btnElement) {
+              btnElement.disabled = false;
+              btnElement.innerHTML = res2 && res2.success ? `<span>✓ Đã tải!</span>` : `<span>Lỗi tải</span>`;
+              setTimeout(() => { btnElement.innerHTML = `<span>Tải về</span>`; }, 2000);
+            }
             setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
           });
         } catch (e2) {
-          // Tầng 3: Mở tab mới với URL gốc để browser tự xử lý
           try {
-            window.open(item.url, '_blank');
-            onFinish(true);
+            window.open(url, '_blank');
+            if (btnElement) {
+              btnElement.disabled = false;
+              btnElement.innerHTML = `<span>✓ Mở tab</span>`;
+              setTimeout(() => { btnElement.innerHTML = `<span>Tải về</span>`; }, 2000);
+            }
           } catch (e3) {
-            onFinish(false);
+            if (btnElement) {
+              btnElement.disabled = false;
+              btnElement.innerHTML = `<span>Lỗi tải</span>`;
+              setTimeout(() => { btnElement.innerHTML = `<span>Tải về</span>`; }, 2000);
+            }
           }
         }
       })();
     });
   }
+
+  // Lắng nghe tiến trình tải % theo thời gian thực từ Offscreen
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === 'CHUNK_PROGRESS') {
+      const { downloadId, progress } = message;
+      const dl = activeDownloads.get(downloadId);
+      if (dl && dl.btnElement) {
+        dl.btnElement.innerHTML = `<span>⏳ ${progress.percent}% (${progress.loadedFormatted || ''})</span>`;
+      }
+    }
+
+    if (message.action === 'CHUNK_COMPLETE') {
+      const { downloadId } = message;
+      const dl = activeDownloads.get(downloadId);
+      if (dl && dl.btnElement) {
+        dl.btnElement.disabled = false;
+        dl.btnElement.innerHTML = `<span>✓ Đã xong!</span>`;
+        setTimeout(() => {
+          dl.btnElement.innerHTML = `<span>Tải về</span>`;
+          activeDownloads.delete(downloadId);
+        }, 2500);
+      }
+    }
+
+    if (message.action === 'HLS_PROGRESS_UPDATE') {
+      const { downloadId, progress } = message;
+      const dl = activeDownloads.get(downloadId);
+      if (dl && dl.btnElement) {
+        dl.btnElement.innerHTML = `<span>⏳ HLS ${progress.percent}% (${progress.completed}/${progress.total})</span>`;
+      }
+    }
+
+    if (message.action === 'HLS_DOWNLOAD_COMPLETE') {
+      const { downloadId } = message;
+      const dl = activeDownloads.get(downloadId);
+      if (dl && dl.btnElement) {
+        dl.btnElement.disabled = false;
+        dl.btnElement.innerHTML = `<span>✓ Đã xong HLS!</span>`;
+        setTimeout(() => {
+          dl.btnElement.innerHTML = `<span>Tải về</span>`;
+          activeDownloads.delete(downloadId);
+        }, 2500);
+      }
+    }
+
+    if (message.action === 'CHUNK_ERROR') {
+      const { downloadId, error } = message;
+      const dl = activeDownloads.get(downloadId);
+      if (dl) {
+        console.warn('[OmniLoader] Chunk Download lỗi:', error, 'chuyển sang tải fallback...');
+        if (dl.btnElement) {
+          dl.btnElement.innerHTML = `<span>Thử lại...</span>`;
+        }
+        fallbackDirectDownload(dl.item.url, dl.filename, dl.btnElement);
+        activeDownloads.delete(downloadId);
+      }
+    }
+  });
 
   async function downloadSubtitleAsSrt(subItem, btnElement) {
     if (btnElement) btnElement.innerHTML = `<span>⏳ Đang lấy...</span>`;

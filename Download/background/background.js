@@ -335,6 +335,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Khởi động Range Chunk Downloader trong Offscreen Document
+  if (message.action === 'START_CHUNK_DOWNLOAD') {
+    (async () => {
+      try {
+        await ensureOffscreenDocument();
+        chrome.runtime.sendMessage({
+          action: 'OFFSCREEN_START_CHUNK',
+          payload: message.payload
+        });
+        sendResponse({ success: true, downloadId: message.payload.downloadId });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'CANCEL_CHUNK_DOWNLOAD') {
+    (async () => {
+      try {
+        await ensureOffscreenDocument();
+        chrome.runtime.sendMessage({
+          action: 'OFFSCREEN_CANCEL_CHUNK',
+          payload: message.payload
+        });
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'GET_ACTIVE_CHUNKS') {
+    (async () => {
+      try {
+        await ensureOffscreenDocument();
+        chrome.runtime.sendMessage({ action: 'OFFSCREEN_GET_ACTIVE_CHUNKS' }, (res) => {
+          sendResponse({ success: true, activeDownloads: res?.activeDownloads || [] });
+        });
+      } catch (err) {
+        sendResponse({ success: false, activeDownloads: [] });
+      }
+    })();
+    return true;
+  }
+
   if (message.action === 'RESOLVE_VIP_DOC') {
     (async () => {
       try {
