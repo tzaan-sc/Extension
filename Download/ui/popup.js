@@ -1034,10 +1034,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           ${showVideoOnly ? `
             <div class="format-section">
-              <div class="section-title"><span>🎬 VIDEO KHÔNG TIẾNG — Cần ghép âm thanh riêng</span></div>
+              <div class="section-title"><span>🎬 VIDEO FULL HD / 4K — Tự động ghép âm thanh</span></div>
               <div class="format-row">
                 <select class="res-select sel-video">${videoOptions}</select>
-                <button class="btn-download btn-dl-video"><span>Tải Video</span></button>
+                <button class="btn-download btn-dl-video"><span>Tải Video (Ghép tiếng)</span></button>
               </div>
             </div>
           ` : ''}
@@ -1072,12 +1072,21 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
         }
 
-        // Video-only download
+        // Video download (tự động ghép audio track chất lượng cao nếu có)
         const btnDlVid = card.querySelector('.btn-dl-video');
         if (btnDlVid) {
           btnDlVid.addEventListener('click', () => {
             const idx = parseInt(card.querySelector('.sel-video').value.replace('v_', ''), 10);
-            executeSecureDownload(item.videos[idx], btnDlVid);
+            const videoItem = item.videos[idx];
+
+            // Tìm track audio chất lượng cao nhất (ưu tiên m4a/AAC để ghép vào MP4 chuẩn)
+            const bestAudio = item.audios.find(a => a.ext === 'm4a' || a.format?.includes('AAC')) || item.audios[0];
+
+            if (bestAudio && bestAudio.url) {
+              startMuxDownload(videoItem, bestAudio, btnDlVid);
+            } else {
+              executeSecureDownload(videoItem, btnDlVid);
+            }
           });
         }
 
@@ -1254,6 +1263,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Khởi động quá trình tải và ghép Video Full HD + Audio bằng Offscreen Muxer
+  function startMuxDownload(videoItem, audioItem, btnElement) {
+    const downloadId = `mux_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const safeTitle = sanitizeFilename(videoItem.title || document.title);
+    const filename = `${safeTitle} [${videoItem.resolution || '1080p'} HD].mp4`;
+
+    if (btnElement) {
+      btnElement.disabled = true;
+      btnElement.innerHTML = `<span>⏳ Chuẩn bị ghép...</span>`;
+      btnElement.dataset.downloadId = downloadId;
+    }
+
+    activeDownloads.set(downloadId, {
+      videoItem,
+      audioItem,
+      filename,
+      btnElement,
+      originalText: btnElement ? btnElement.innerHTML : 'Tải Video (Ghép tiếng)'
+    });
+
+    chrome.runtime.sendMessage({
+      action: 'START_MUX_DOWNLOAD',
+      payload: {
+        videoUrl: videoItem.url,
+        audioUrl: audioItem.url,
+        filename: filename,
+        downloadId: downloadId
+      }
+    }, (res) => {
+      if (!res || !res.success) {
+        console.warn('[OmniLoader] Lỗi gọi Muxer, fallback tải trực tiếp video:', res?.error);
+        executeSecureDownload(videoItem, btnElement);
+      }
+    });
+  }
+
   function fallbackDirectDownload(url, filename, btnElement) {
     chrome.runtime.sendMessage({
       action: 'DOWNLOAD_DIRECT',
@@ -1362,6 +1407,40 @@ document.addEventListener('DOMContentLoaded', async () => {
           dl.btnElement.innerHTML = `<span>Thử lại...</span>`;
         }
         fallbackDirectDownload(dl.item.url, dl.filename, dl.btnElement);
+        activeDownloads.delete(downloadId);
+      }
+    }
+
+    if (message.action === 'MUX_PROGRESS') {
+      const { downloadId, progress } = message;
+      const dl = activeDownloads.get(downloadId);
+      if (dl && dl.btnElement) {
+        dl.btnElement.innerHTML = `<span>⏳ ${progress.percent}% (${progress.detail || ''})</span>`;
+      }
+    }
+
+    if (message.action === 'MUX_COMPLETE') {
+      const { downloadId } = message;
+      const dl = activeDownloads.get(downloadId);
+      if (dl && dl.btnElement) {
+        dl.btnElement.disabled = false;
+        dl.btnElement.innerHTML = `<span>✓ Đã ghép xong!</span>`;
+        setTimeout(() => {
+          dl.btnElement.innerHTML = `<span>Tải Video (Ghép tiếng)</span>`;
+          activeDownloads.delete(downloadId);
+        }, 3000);
+      }
+    }
+
+    if (message.action === 'MUX_ERROR') {
+      const { downloadId, error } = message;
+      const dl = activeDownloads.get(downloadId);
+      if (dl) {
+        console.warn('[OmniLoader] Ghép Video+Audio lỗi:', error, 'chuyển sang tải video trực tiếp...');
+        if (dl.btnElement) {
+          dl.btnElement.innerHTML = `<span>Tải video trực tiếp...</span>`;
+        }
+        executeSecureDownload(dl.videoItem, dl.btnElement);
         activeDownloads.delete(downloadId);
       }
     }

@@ -2,6 +2,15 @@
 // Tải luồng m3u8 và tách âm thanh MP3/WAV từ Video không bị chặn download
 
 import { audioBufferToWav } from './audio_encoder.js';
+import {
+  Input,
+  Output,
+  Mp4OutputFormat,
+  BufferTarget,
+  BufferSource,
+  ALL_FORMATS,
+  Conversion
+} from '../lib/mediabunny.min.mjs';
 
 // Chuyển Blob thành Data URL để gửi về Background tải qua chrome.downloads API
 function blobToDataUrl(blob) {
@@ -399,7 +408,213 @@ class RangeChunkDownloader {
   }
 }
 
+// 4. Bộ Ghép Video + Audio (1080p Full HD Muxer qua Mediabunny)
+class VideoAudioMuxer {
+  constructor(videoUrl, audioUrl, filename, downloadId) {
+    this.videoUrl = videoUrl;
+    this.audioUrl = audioUrl;
+    this.filename = filename || 'video_1080p_hd.mp4';
+    this.downloadId = downloadId;
+    this.isCancelled = false;
+    this.abortControllers = [];
+  }
+
+  async downloadBuffer(url, label, weightStart, weightEnd) {
+    const chunkDownloader = new RangeChunkDownloader(url, 'temp', `${this.downloadId}_sub`, {
+      chunkSize: 5 * 1024 * 1024,
+      concurrency: 3
+    });
+
+    const totalSize = await chunkDownloader.getTotalSize();
+    if (totalSize <= 0) {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return new Uint8Array(await resp.arrayBuffer());
+    }
+
+    const chunkCount = Math.ceil(totalSize / chunkDownloader.chunkSize);
+    const chunkBuffers = new Array(chunkCount);
+    let loadedBytes = 0;
+
+    const chunkRanges = [];
+    for (let i = 0; i < chunkCount; i++) {
+      const start = i * chunkDownloader.chunkSize;
+      const end = Math.min((i + 1) * chunkDownloader.chunkSize - 1, totalSize - 1);
+      chunkRanges.push({ index: i, start, end });
+    }
+
+    let currentIndex = 0;
+    const worker = async () => {
+      while (currentIndex < chunkRanges.length && !this.isCancelled) {
+        const task = chunkRanges[currentIndex++];
+        let retries = 3;
+        while (retries > 0 && !this.isCancelled) {
+          try {
+            const controller = new AbortController();
+            this.abortControllers.push(controller);
+
+            const resp = await fetch(url, {
+              headers: { 'Range': `bytes=${task.start}-${task.end}` },
+              signal: controller.signal
+            });
+            if (!resp.ok && resp.status !== 206) throw new Error(`HTTP ${resp.status}`);
+            const buf = await resp.arrayBuffer();
+            chunkBuffers[task.index] = new Uint8Array(buf);
+            loadedBytes += buf.byteLength;
+
+            const progressRatio = loadedBytes / totalSize;
+            const overallPercent = Math.min(100, Math.round(weightStart + progressRatio * (weightEnd - weightStart)));
+
+            chrome.runtime.sendMessage({
+              action: 'MUX_PROGRESS',
+              downloadId: this.downloadId,
+              progress: {
+                stage: label,
+                percent: overallPercent,
+                detail: `${label} (${formatBytes(loadedBytes)}/${formatBytes(totalSize)})`,
+                filename: this.filename
+              }
+            });
+            break;
+          } catch (e) {
+            retries--;
+            if (retries === 0) throw e;
+            await new Promise(r => setTimeout(r, 500));
+          }
+        }
+      }
+    };
+
+    const workers = [];
+    for (let w = 0; w < Math.min(3, chunkCount); w++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+
+    if (this.isCancelled) return null;
+
+    let totalLen = 0;
+    for (const b of chunkBuffers) totalLen += b ? b.byteLength : 0;
+    const result = new Uint8Array(totalLen);
+    let offset = 0;
+    for (const b of chunkBuffers) {
+      if (b) {
+        result.set(b, offset);
+        offset += b.byteLength;
+      }
+    }
+    return result;
+  }
+
+  async muxAndSave() {
+    // 1. Tải Video (0% -> 75% tiến trình)
+    chrome.runtime.sendMessage({
+      action: 'MUX_PROGRESS',
+      downloadId: this.downloadId,
+      progress: { stage: 'video', percent: 5, detail: 'Đang tải video Full HD...', filename: this.filename }
+    });
+    const videoBytes = await this.downloadBuffer(this.videoUrl, 'Tải video HD', 0, 75);
+    if (!videoBytes || this.isCancelled) return;
+
+    // 2. Tải Audio (75% -> 90% tiến trình)
+    chrome.runtime.sendMessage({
+      action: 'MUX_PROGRESS',
+      downloadId: this.downloadId,
+      progress: { stage: 'audio', percent: 76, detail: 'Đang tải âm thanh...', filename: this.filename }
+    });
+    const audioBytes = await this.downloadBuffer(this.audioUrl, 'Tải âm thanh', 75, 90);
+    if (!audioBytes || this.isCancelled) return;
+
+    // 3. Ghép Video + Audio qua Mediabunny (90% -> 98% tiến trình)
+    chrome.runtime.sendMessage({
+      action: 'MUX_PROGRESS',
+      downloadId: this.downloadId,
+      progress: { stage: 'muxing', percent: 92, detail: 'Đang ghép hình và tiếng...', filename: this.filename }
+    });
+
+    const videoInput = new Input({
+      source: new BufferSource(videoBytes.buffer),
+      formats: ALL_FORMATS
+    });
+    const audioInput = new Input({
+      source: new BufferSource(audioBytes.buffer),
+      formats: ALL_FORMATS
+    });
+
+    const output = new Output({
+      format: new Mp4OutputFormat(),
+      target: new BufferTarget()
+    });
+
+    const videoConversion = await Conversion.init({
+      input: videoInput,
+      output,
+      composable: true,
+      audio: { discard: true }
+    });
+
+    const audioConversion = await Conversion.init({
+      input: audioInput,
+      output,
+      composable: true,
+      video: { discard: true }
+    });
+
+    if (!videoConversion.isValid || !audioConversion.isValid) {
+      throw new Error('Định dạng video/audio không thể ghép trực tiếp vào MP4.');
+    }
+
+    await output.start();
+    await Promise.all([videoConversion.execute(), audioConversion.execute()]);
+    await output.finalize();
+
+    const finalBuffer = output.target.buffer;
+    if (!finalBuffer || finalBuffer.byteLength === 0) {
+      throw new Error('Lỗi tạo file MP4 sau khi ghép.');
+    }
+
+    // 4. Tạo Blob URL và kích hoạt lưu file
+    const blob = new Blob([finalBuffer], { type: 'video/mp4' });
+    const blobUrl = URL.createObjectURL(blob);
+    const safeFilename = this.filename.endsWith('.mp4') ? this.filename : `${this.filename}.mp4`;
+
+    chrome.runtime.sendMessage({
+      action: 'DOWNLOAD_DIRECT',
+      url: blobUrl,
+      filename: safeFilename
+    }, (res) => {
+      if (res && res.success) {
+        chrome.runtime.sendMessage({
+          action: 'MUX_COMPLETE',
+          downloadId: this.downloadId,
+          downloadIdChrome: res.downloadId,
+          filename: safeFilename
+        });
+      } else {
+        chrome.runtime.sendMessage({
+          action: 'MUX_ERROR',
+          downloadId: this.downloadId,
+          error: res?.error || 'Lỗi lưu file sau khi ghép'
+        });
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 180000);
+    });
+  }
+
+  cancel() {
+    this.isCancelled = true;
+    this.abortControllers.forEach(c => {
+      try { c.abort(); } catch (e) {}
+    });
+    chrome.runtime.sendMessage({
+      action: 'MUX_CANCELLED',
+      downloadId: this.downloadId
+    });
+  }
+}
+
 const activeChunkDownloads = new Map();
+const activeMuxDownloads = new Map();
 
 // Lắng nghe lệnh từ Background
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -440,6 +655,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (activeChunkDownloads.has(downloadId)) {
       activeChunkDownloads.get(downloadId).cancel();
       activeChunkDownloads.delete(downloadId);
+    }
+    sendResponse({ cancelled: true });
+    return true;
+  }
+
+  if (message.action === 'OFFSCREEN_START_MUX') {
+    const { videoUrl, audioUrl, filename, downloadId } = message.payload;
+    const muxer = new VideoAudioMuxer(videoUrl, audioUrl, filename, downloadId);
+    activeMuxDownloads.set(downloadId, muxer);
+
+    muxer.muxAndSave().catch((err) => {
+      console.error('[Offscreen] Mux error:', err);
+      chrome.runtime.sendMessage({ action: 'MUX_ERROR', downloadId, error: err.message });
+    }).finally(() => {
+      activeMuxDownloads.delete(downloadId);
+    });
+
+    sendResponse({ started: true });
+    return true;
+  }
+
+  if (message.action === 'OFFSCREEN_CANCEL_MUX') {
+    const { downloadId } = message.payload;
+    if (activeMuxDownloads.has(downloadId)) {
+      activeMuxDownloads.get(downloadId).cancel();
+      activeMuxDownloads.delete(downloadId);
     }
     sendResponse({ cancelled: true });
     return true;

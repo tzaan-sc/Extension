@@ -382,6 +382,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Khởi động ghép Video + Audio qua Offscreen Muxer
+  if (message.action === 'START_MUX_DOWNLOAD') {
+    (async () => {
+      try {
+        await ensureOffscreenDocument();
+        chrome.runtime.sendMessage({
+          action: 'OFFSCREEN_START_MUX',
+          payload: message.payload
+        });
+        sendResponse({ success: true, downloadId: message.payload.downloadId });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === 'CANCEL_MUX_DOWNLOAD') {
+    (async () => {
+      try {
+        await ensureOffscreenDocument();
+        chrome.runtime.sendMessage({
+          action: 'OFFSCREEN_CANCEL_MUX',
+          payload: message.payload
+        });
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
   if (message.action === 'RESOLVE_VIP_DOC') {
     (async () => {
       try {
