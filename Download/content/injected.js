@@ -341,6 +341,7 @@
   let _lastVideoId = null;
   let _lastProcessedTime = 0;
   let _lastAndroidVideoId = null;
+  let _hasAndroidStreamForVideo = null;
   const _capturedItags = new Set();
 
   /**
@@ -418,19 +419,31 @@
 
   /**
    * Xử lý playerResponse từ YouTube:
-   * 1. Giải mã cipher cho các format bị mã hóa
-   * 2. Áp dụng n-transform cho tất cả URL
-   * 3. Gửi dữ liệu về content script
+   * 1. Ưu tiên stream sạch từ Android Innertube (isFromAndroid = true)
+   * 2. Giải mã cipher cho các format bị mã hóa
+   * 3. Áp dụng n-transform cho tất cả URL
+   * 4. Gửi dữ liệu về content script
    */
-  async function handleYouTubePlayerResponse(playerResponse) {
+  async function handleYouTubePlayerResponse(playerResponse, isFromAndroid = false) {
     if (!playerResponse || !playerResponse.streamingData) return;
 
     const videoId = playerResponse.videoDetails?.videoId;
     const now = Date.now();
-    // Tránh xử lý trùng lặp: cùng video trong vòng 10 giây
-    if (videoId && videoId === _lastVideoId && (now - _lastProcessedTime) < 10000) return;
-    _lastVideoId = videoId;
-    _lastProcessedTime = now;
+
+    if (isFromAndroid) {
+      _hasAndroidStreamForVideo = videoId;
+      _lastVideoId = videoId;
+      _lastProcessedTime = now;
+    } else {
+      // Nếu video này đã có stream sạch từ Android VR thì không bị web player ghi đè
+      if (_hasAndroidStreamForVideo && videoId === _hasAndroidStreamForVideo) {
+        return;
+      }
+      // Tránh xử lý trùng lặp Web Player trong vòng 10 giây
+      if (videoId && videoId === _lastVideoId && (now - _lastProcessedTime) < 10000) return;
+      _lastVideoId = videoId;
+      _lastProcessedTime = now;
+    }
 
     // Kiểm tra xem có format nào cần giải mã cipher không
     const allFormats = [
@@ -513,7 +526,7 @@
             ((androidData.streamingData.formats && androidData.streamingData.formats.length > 0) ||
              (androidData.streamingData.adaptiveFormats && androidData.streamingData.adaptiveFormats.length > 0))) {
           console.log('[OmniLoader] ✅ Bắt được stream sạch từ Android Innertube cho video:', videoId);
-          handleYouTubePlayerResponse(androidData);
+          handleYouTubePlayerResponse(androidData, true);
           return;
         }
       } catch (e) {}
@@ -582,19 +595,27 @@
   // 8. Event Listeners & Khởi động
   // ============================================================
 
-  // SPA Navigation: Reset video ID khi chuyển trang
-  window.addEventListener('yt-navigate-finish', () => {
+  function resetYouTubeState() {
     _lastVideoId = null;
     _lastAndroidVideoId = null;
+    _hasAndroidStreamForVideo = null;
     _capturedItags.clear();
-    setTimeout(scanYouTube, 1500);
-  });
+    setTimeout(scanYouTube, 300);
+    setTimeout(scanYouTube, 1200);
+  }
+
+  // SPA Navigation: Reset video ID khi chuyển trang
+  window.addEventListener('yt-navigate-finish', resetYouTubeState);
+  window.addEventListener('popstate', resetYouTubeState);
 
   // Page Load: Quét lần đầu
-  window.addEventListener('load', () => {
-    setTimeout(scanYouTube, 2000);
-  });
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', () => setTimeout(scanYouTube, 400));
+  } else {
+    setTimeout(scanYouTube, 400);
+  }
+  window.addEventListener('load', () => setTimeout(scanYouTube, 1000));
 
-  // Quét định kỳ dự phòng (ít thường xuyên hơn để tiết kiệm tài nguyên)
-  setInterval(scanYouTube, 5000);
+  // Quét định kỳ dự phòng
+  setInterval(scanYouTube, 4000);
 })();

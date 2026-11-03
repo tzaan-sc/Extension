@@ -250,11 +250,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const { url, filename } = message;
     let safeFilename = (filename || 'download_file')
       .replace(/[\x00-\x1f\x7f-\x9f\\/:*?"<>|]/g, '_')
-      .replace(/[\s.]+$/, '')
       .trim();
 
-    if (filename && filename.toLowerCase().endsWith('.pdf') && !safeFilename.toLowerCase().endsWith('.pdf')) {
-      safeFilename += '.pdf';
+    // Bảo tồn extension đúng nếu safeFilename bị mất đuôi
+    if (filename) {
+      const dotIdx = filename.lastIndexOf('.');
+      if (dotIdx !== -1) {
+        const expectedExt = filename.substring(dotIdx);
+        if (!safeFilename.toLowerCase().endsWith(expectedExt.toLowerCase())) {
+          safeFilename += expectedExt;
+        }
+      }
     }
 
     // Cấu hình download cơ bản
@@ -442,4 +448,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   return false;
+});
+
+// Đảm bảo tên file được giữ nguyên định dạng (mp4, m4a, webm, pdf...) thay vì bị Chrome tự động đổi thành .txt
+chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+  if (item.filename) {
+    let targetName = item.filename;
+    // Nếu Chrome tự ý thêm .txt vào sau các đuôi file media/tài liệu chuẩn
+    if (targetName.match(/\.(mp4|m4a|webm|weba|mp3|pdf|srt)\.txt$/i)) {
+      targetName = targetName.replace(/\.txt$/i, '');
+      suggest({ filename: targetName, conflictAction: 'uniquify' });
+      return true;
+    }
+  }
+  suggest();
 });

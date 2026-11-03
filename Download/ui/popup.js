@@ -119,6 +119,13 @@ function formatPdfFilename(title, fallback = 'Tai_Lieu') {
   return `${name}.pdf`;
 }
 
+function sanitizeFilename(title, fallback = 'download_media') {
+  let clean = (title || fallback).trim();
+  clean = clean.replace(/[\x00-\x1f\x7f-\x9f\\/:*?"<>|]/g, '_').trim();
+  clean = clean.replace(/\s+/g, ' ').trim();
+  return clean.substring(0, 100) || fallback;
+}
+
 async function ensureJpegDataUrl(page) {
   if (page.dataUrl && page.dataUrl.startsWith('data:image/jpeg')) {
     return page;
@@ -1300,6 +1307,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function fallbackDirectDownload(url, filename, btnElement) {
+    if (!url) return;
+
+    // Không chuyển tải trực tiếp cho link YouTube/googlevideo vì Chrome sẽ bị trả về 403 Forbidden và lưu thành file .txt
+    if (url.includes('googlevideo.com') || url.includes('youtube.com')) {
+      if (btnElement) {
+        btnElement.disabled = false;
+        btnElement.innerHTML = `<span>⚠️ Lỗi kết nối YouTube</span>`;
+        setTimeout(() => { btnElement.innerHTML = `<span>Tải về</span>`; }, 2500);
+      }
+      return;
+    }
+
     chrome.runtime.sendMessage({
       action: 'DOWNLOAD_DIRECT',
       url: url,
@@ -1402,11 +1421,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       const { downloadId, error } = message;
       const dl = activeDownloads.get(downloadId);
       if (dl) {
-        console.warn('[OmniLoader] Chunk Download lỗi:', error, 'chuyển sang tải fallback...');
+        console.warn('[OmniLoader] Chunk Download lỗi:', error);
         if (dl.btnElement) {
-          dl.btnElement.innerHTML = `<span>Thử lại...</span>`;
+          dl.btnElement.disabled = false;
+          dl.btnElement.innerHTML = `<span>⚠️ Lỗi tải: ${(error || '').substring(0, 20)}</span>`;
+          setTimeout(() => {
+            dl.btnElement.innerHTML = `<span>${dl.originalText || 'Tải về'}</span>`;
+          }, 3000);
         }
-        fallbackDirectDownload(dl.item.url, dl.filename, dl.btnElement);
         activeDownloads.delete(downloadId);
       }
     }
@@ -1436,11 +1458,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       const { downloadId, error } = message;
       const dl = activeDownloads.get(downloadId);
       if (dl) {
-        console.warn('[OmniLoader] Ghép Video+Audio lỗi:', error, 'chuyển sang tải video trực tiếp...');
+        console.warn('[OmniLoader] Ghép Video+Audio lỗi:', error);
         if (dl.btnElement) {
-          dl.btnElement.innerHTML = `<span>Tải video trực tiếp...</span>`;
+          dl.btnElement.disabled = false;
+          dl.btnElement.innerHTML = `<span>⚠️ Lỗi ghép: ${(error || '').substring(0, 20)}</span>`;
+          setTimeout(() => {
+            dl.btnElement.innerHTML = `<span>${dl.originalText || 'Tải Video (Ghép tiếng)'}</span>`;
+          }, 3000);
         }
-        executeSecureDownload(dl.videoItem, dl.btnElement);
         activeDownloads.delete(downloadId);
       }
     }

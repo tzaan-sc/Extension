@@ -22,6 +22,21 @@ function blobToDataUrl(blob) {
   });
 }
 
+// Kích hoạt thẻ A download trong môi trường DOM của Offscreen để đảm bảo file và đuôi extension được giữ 100%
+function triggerAnchorDownload(blobUrl, filename) {
+  try {
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => a.remove(), 2000);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 // 1. Tách âm thanh từ file Video
 async function extractAudioFromVideo(videoUrl, filename) {
   try {
@@ -328,11 +343,21 @@ class RangeChunkDownloader {
           filename: this.filename
         });
       } else {
-        chrome.runtime.sendMessage({
-          action: 'CHUNK_ERROR',
-          downloadId: this.downloadId,
-          error: res?.error || 'Lỗi lưu file tải về'
-        });
+        // Fallback: Tự động kích hoạt tải qua thẻ A trong DOM Offscreen
+        const ok = triggerAnchorDownload(blobUrl, this.filename);
+        if (ok) {
+          chrome.runtime.sendMessage({
+            action: 'CHUNK_COMPLETE',
+            downloadId: this.downloadId,
+            filename: this.filename
+          });
+        } else {
+          chrome.runtime.sendMessage({
+            action: 'CHUNK_ERROR',
+            downloadId: this.downloadId,
+            error: res?.error || 'Lỗi lưu file tải về'
+          });
+        }
       }
       setTimeout(() => URL.revokeObjectURL(blobUrl), 180000); // 3 phút giải phóng RAM
     });
@@ -386,12 +411,22 @@ class RangeChunkDownloader {
       action: 'DOWNLOAD_DIRECT',
       url: blobUrl,
       filename: this.filename
-    }, () => {
-      chrome.runtime.sendMessage({
-        action: 'CHUNK_COMPLETE',
-        downloadId: this.downloadId,
-        filename: this.filename
-      });
+    }, (res) => {
+      if (res && res.success) {
+        chrome.runtime.sendMessage({
+          action: 'CHUNK_COMPLETE',
+          downloadId: this.downloadId,
+          downloadIdChrome: res.downloadId,
+          filename: this.filename
+        });
+      } else {
+        triggerAnchorDownload(blobUrl, this.filename);
+        chrome.runtime.sendMessage({
+          action: 'CHUNK_COMPLETE',
+          downloadId: this.downloadId,
+          filename: this.filename
+        });
+      }
       setTimeout(() => URL.revokeObjectURL(blobUrl), 180000);
     });
   }
@@ -591,11 +626,21 @@ class VideoAudioMuxer {
           filename: safeFilename
         });
       } else {
-        chrome.runtime.sendMessage({
-          action: 'MUX_ERROR',
-          downloadId: this.downloadId,
-          error: res?.error || 'Lỗi lưu file sau khi ghép'
-        });
+        // Fallback: Tự động kích hoạt tải qua thẻ A trong DOM Offscreen
+        const ok = triggerAnchorDownload(blobUrl, safeFilename);
+        if (ok) {
+          chrome.runtime.sendMessage({
+            action: 'MUX_COMPLETE',
+            downloadId: this.downloadId,
+            filename: safeFilename
+          });
+        } else {
+          chrome.runtime.sendMessage({
+            action: 'MUX_ERROR',
+            downloadId: this.downloadId,
+            error: res?.error || 'Lỗi lưu file sau khi ghép'
+          });
+        }
       }
       setTimeout(() => URL.revokeObjectURL(blobUrl), 180000);
     });

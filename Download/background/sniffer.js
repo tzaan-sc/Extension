@@ -65,7 +65,8 @@ export class MediaSniffer {
     items.forEach(item => {
       if (!item.url || !this.isValidMedia(item)) return;
       const key = item.id || (item.url.split('?')[0] + (item.quality || '') + (item.ext || ''));
-      if (!existingMap.has(key)) {
+      // Ưu tiên cập nhật nếu là nguồn YouTube để nhận stream sạch trực tiếp từ Android VR
+      if (!existingMap.has(key) || item.source === 'youtube') {
         existingMap.set(key, {
           ...item,
           id: item.id || `item_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
