@@ -133,17 +133,43 @@ const DiffUtils = {
   generateHint(text, level = 1) {
     if (!text) return '';
     try {
-      return text.replace(/[\p{L}\p{N}]/gu, (char, index) => {
+      // Hỗ trợ tiếng Nhật / tiếng Trung thông qua Intl.Segmenter nếu có
+      const hasCJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(text);
+      if (hasCJK && typeof Intl !== 'undefined' && Intl.Segmenter) {
+        try {
+          const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
+          let result = '';
+          for (const seg of segmenter.segment(text)) {
+            if (seg.isWordLike && seg.segment.length > 0) {
+              if (level === 1) {
+                result += seg.segment[0] + '_'.repeat(seg.segment.length - 1);
+              } else {
+                result += '_'.repeat(seg.segment.length);
+              }
+            } else {
+              result += seg.segment;
+            }
+          }
+          if (result.length > 0) return result;
+        } catch (e) {}
+      }
+
+      // Chuẩn hóa cho Tiếng Anh, Tiếng Việt và các ngôn ngữ chữ cái
+      // Nhận diện đầu từ ngay cả khi từ nằm sau dấu ngoặc, dấu nháy kép v.v.
+      return text.replace(/[\p{L}\p{N}]/gu, (char, index, str) => {
         if (level === 1) {
-          return index === 0 || text[index - 1] === ' ' ? char : '_';
+          const prevChar = index > 0 ? str[index - 1] : '';
+          const isWordStart = index === 0 || !/[\p{L}\p{N}]/u.test(prevChar);
+          return isWordStart ? char : '_';
         } else {
           return '_';
         }
       });
     } catch (e) {
-      return text.replace(/[a-zA-Z0-9]/g, (char, index) => {
+      return text.replace(/[a-zA-Z0-9]/g, (char, index, str) => {
         if (level === 1) {
-          return index === 0 || text[index - 1] === ' ' ? char : '_';
+          const prev = index > 0 ? str[index - 1] : '';
+          return (index === 0 || !/[a-zA-Z0-9]/.test(prev)) ? char : '_';
         } else {
           return '_';
         }

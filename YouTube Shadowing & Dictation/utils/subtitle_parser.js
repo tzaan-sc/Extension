@@ -15,8 +15,22 @@ const SubtitleParser = {
       .replace(/&#39;/g, "'")
       .replace(/&apos;/g, "'")
       .replace(/&#x2F;/g, '/')
-      .replace(/&#x([0-9a-fA-F]+);/g, (match, hex) => String.fromCharCode(parseInt(hex, 16)))
-      .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(parseInt(dec, 10)));
+      .replace(/&#x([0-9a-fA-F]+);/g, (match, hex) => {
+        try {
+          const code = parseInt(hex, 16);
+          return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+        } catch (e) {
+          return match;
+        }
+      })
+      .replace(/&#(\d+);/g, (match, dec) => {
+        try {
+          const code = parseInt(dec, 10);
+          return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+        } catch (e) {
+          return match;
+        }
+      });
   },
 
   // Clean and normalize subtitle text

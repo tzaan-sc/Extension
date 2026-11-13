@@ -3,9 +3,9 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.error("Error setting side panel behavior:", error));
 
-// Optional: Listen for tab update to notify side panel of video changes
+// Notify side panel of video changes (supports both page load and SPA navigation)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url && tab.url.includes('youtube.com/watch')) {
+  if ((changeInfo.status === 'complete' || changeInfo.url) && tab.url && tab.url.includes('youtube.com/watch')) {
     chrome.runtime.sendMessage({
       type: 'YOUTUBE_NAVIGATION',
       tabId: tabId,

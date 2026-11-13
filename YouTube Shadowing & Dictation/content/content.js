@@ -327,7 +327,11 @@
         type: 'REQUEST_CAPTIONS_TRACKS'
       }, '*');
 
+      let responded = false;
+
       const timeoutId = setTimeout(() => {
+        if (responded) return;
+        responded = true;
         const title = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.textContent || document.title.replace(' - YouTube', '');
         sendResponse({
           tracks: cachedTracks,
@@ -340,6 +344,8 @@
       }, 500);
 
       pendingDataResolvers.push((data) => {
+        if (responded) return;
+        responded = true;
         clearTimeout(timeoutId);
         sendResponse({
           tracks: data.tracks || cachedTracks,
